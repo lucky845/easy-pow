@@ -1,0 +1,85 @@
+package io.github.lucky845.basic.pow.demo.controller;
+
+import java.util.Map;
+
+import io.github.lucky845.basic.pow.AltchaCodec;
+import io.github.lucky845.basic.pow.PowChallengeIssuer;
+import io.github.lucky845.basic.pow.PowChallengeVerifier;
+import io.github.lucky845.basic.pow.PowResult;
+import io.github.lucky845.basic.pow.PowStatus;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 演示控制器:GET /pow/challenge 下发 altcha challenge;POST /pow/verify 校验 base64(JSON) solution。
+ *
+ * @author created by lucky845 on 2026-02-06
+ */
+@RestController
+@RequestMapping("/pow")
+public class PowController {
+
+    private final PowChallengeIssuer issuer;
+    private final PowChallengeVerifier verifier;
+
+    public PowController(PowChallengeIssuer issuer, PowChallengeVerifier verifier) {
+        this.issuer = issuer;
+        this.verifier = verifier;
+    }
+
+    /** 下发 altcha challenge,字段与官方协议一致。 */
+    @GetMapping(value = "/challenge", produces = MediaType.APPLICATION_JSON_VALUE)
+    public String challenge() {
+        return AltchaCodec.toJson(issuer.issue());
+    }
+
+    /**
+     * 校验 solution——表单路径:手动联调面板以 {@code payload} 表单字段提交,
+     * altcha 组件随表单提交时字段名为 {@code altcha}。原始 JSON 同样接受。
+     */
+    @PostMapping(value = "/verify",
+            consumes = {MediaType.APPLICATION_FORM_URLENCODED_VALUE, MediaType.MULTIPART_FORM_DATA_VALUE},
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public VerifyResponse verify(@RequestParam(value = "payload", required = false) String payload,
+                                 @RequestParam(value = "altcha", required = false) String altcha) {
+        return doVerify(payload != null && !payload.isBlank() ? payload : altcha);
+    }
+
+    /**
+     * 校验 solution——JSON 路径:altcha 组件 verifyurl 模式 POST JSON body
+     * {@code {"payload": "<base64(JSON)>"}}(组件 dist 源码实证),与表单路径等价。
+     */
+    @PostMapping(value = "/verify", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public VerifyResponse verifyJson(@RequestBody Map<String, String> body) {
+        String payload = body.get("payload");
+        String altcha = body.get("altcha");
+        return doVerify(payload != null && !payload.isBlank() ? payload : altcha);
+    }
+
+    private VerifyResponse doVerify(String solution) {
+        if (solution == null || solution.isBlank()) {
+            return new VerifyResponse(false, PowStatus.BAD_SOLUTION.name(),
+                    "缺少 solution:请以 payload(或 altcha)参数提交 base64(JSON)", solution);
+        }
+        PowResult result = verifier.verify(solution);
+        return new VerifyResponse(result.status() == PowStatus.PASSED, result.status().name(), result.reason(), solution);
+    }
+
+    /**
+     * 校验结果响应
+     *
+     * @param success 校验是否通过
+     * @param status  结果状态名
+     * @param message 结果说明
+     * @param payload 回显 solution:altcha v2 组件的 verifyurl 流程必须从响应读回 payload
+     *                才会置 VERIFIED(dist 源码 r?.payload&&b(ke,r.payload),否则无限 Verifying)
+     */
+    public record VerifyResponse(boolean success, String status, String message, String payload) {
+    }
+}

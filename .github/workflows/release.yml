@@ -1,0 +1,47 @@
+# Maven Central 发布链:推 tag(如 v0.1.0)即自动签名、打包 sources/javadoc、上传 Central Portal。
+# 前置一次性配置见 README「发布 Maven Central」:Central Portal 命名空间验证 + User Token + GPG 密钥 + 仓库 Secrets。
+name: Release to Maven Central
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (inject central server into settings.xml)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Set release version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Releasing io.github.lucky845:easy-pow:$VERSION"
+          mvn -B versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+
+      - name: Import GPG signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+      - name: Sign, bundle and publish
+        env:
+          MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
+          # maven-gpg-plugin 3.2+ 支持从该环境变量读取口令
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: mvn -B -Prelease deploy

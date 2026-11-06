@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy PoW 演示</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+            background: #0C1216;
+            color: #E6EDF3;
+            margin: 0;
+            padding: 32px 16px;
+            display: flex;
+            justify-content: center;
+        }
+        .card {
+            width: 420px;
+            background: #131A21;
+            border: 1px solid #26303A;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        h1 { font-size: 20px; margin: 0 0 8px; }
+        h2 { font-size: 15px; margin: 24px 0 8px; color: #8B949E; }
+        p  { font-size: 13px; color: #8B949E; line-height: 1.6; margin: 0 0 16px; }
+        button {
+            background: #1F6FEB; color: #fff; border: 0; border-radius: 6px;
+            padding: 8px 14px; font-size: 13px; cursor: pointer; margin: 4px 8px 4px 0;
+        }
+        button:disabled { opacity: .5; cursor: default; }
+        pre {
+            background: #0C1216; border: 1px solid #26303A; border-radius: 8px;
+            padding: 10px; font-size: 12px; line-height: 1.5; overflow: auto;
+            max-height: 220px; white-space: pre-wrap; word-break: break-all;
+        }
+        altcha-widget { --altcha-color-text: #E6EDF3; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Easy PoW 演示</h1>
+    <p>PoW(Proof of Work)无感验证码:页面加载即自动解题,真实用户全程无感,脚本批量请求成本被显著抬高。</p>
+
+    <!-- altcha 官方前端组件(CDN 引入):自动请求 challengeurl,解出 number 后 POST verifyurl 校验 -->
+    <altcha-widget challengeurl="/pow/challenge" verifyurl="/pow/verify" auto="onload"></altcha-widget>
+
+    <h2>手动联调(调试用)</h2>
+    <p>与 altcha 组件相同的完整流程:获取挑战 → 本地枚举 number → base64(JSON) 回传校验。</p>
+    <button id="fetchBtn">1. 获取挑战</button>
+    <pre id="challenge">尚未获取</pre>
+    <button id="solveBtn" disabled>2. 本地解题并校验</button>
+    <pre id="result">尚未解题</pre>
+</div>
+
+<script async defer src="https://cdn.jsdelivr.net/npm/altcha@2/dist/altcha.min.js" type="module"></script>
+<script>
+    const challengePre = document.getElementById("challenge");
+    const resultPre = document.getElementById("result");
+    let current = null;
+
+    async function sha256Hex(text) {
+        const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+        return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    document.getElementById("fetchBtn").addEventListener("click", async () => {
+        challengePre.textContent = "请求中…";
+        try {
+            const res = await fetch("/pow/challenge");
+            current = await res.json();
+            challengePre.textContent = JSON.stringify(current, null, 2);
+            document.getElementById("solveBtn").disabled = false;
+        } catch (e) {
+            challengePre.textContent = "获取失败: " + e;
+        }
+    });
+
+    document.getElementById("solveBtn").addEventListener("click", async () => {
+        if (!current) return;
+        resultPre.textContent = "解题中(最多枚举 " + current.maxnumber + " 次)…";
+        try {
+            let number = -1;
+            for (let n = 0; n <= current.maxnumber; n++) {
+                if ((await sha256Hex(current.salt + n)) === current.challenge) { number = n; break; }
+            }
+            if (number < 0) throw new Error("未找到解");
+            const solution = {
+                algorithm: current.algorithm, challenge: current.challenge, number: number,
+                salt: current.salt, signature: current.signature
+            };
+            const payload = btoa(JSON.stringify(solution));
+            const res = await fetch("/pow/verify", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: "payload=" + encodeURIComponent(payload)
+            });
+            resultPre.textContent = "solution number=" + number + "\n\n" + JSON.stringify(await res.json(), null, 2);
+        } catch (e) {
+            resultPre.textContent = "失败: " + e;
+        }
+    });
+</script>
+</body>
+</html>

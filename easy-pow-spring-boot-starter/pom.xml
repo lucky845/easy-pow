@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <packaging>jar</packaging>
+
+  <parent>
+    <groupId>io.github.lucky845</groupId>
+    <artifactId>easy-pow</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>easy-pow-spring-boot-starter</artifactId>
+
+  <name>${project.artifactId}</name>
+  <description>PoW Spring Boot starter</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.lucky845</groupId>
+      <artifactId>easy-pow-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+    </dependency>
+
+    <!--
+      Redis 支持是可选的:只有用户自己引入 spring-boot-starter-data-redis
+      且容器里有 StringRedisTemplate 时,RedisPowStorage 才会被注册。
+      optional 保证该依赖不会传递到用户的 classpath。
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
