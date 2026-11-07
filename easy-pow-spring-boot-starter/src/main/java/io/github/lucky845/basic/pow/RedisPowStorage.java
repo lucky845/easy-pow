@@ -24,14 +24,16 @@ import java.util.Objects;
  *       挑战记录是"两分钟内就被读走"的短命数据,自描述文本与类结构、依赖版本完全解耦。</li>
  * </ul>
  *
- * <h3>原子消费的取舍</h3>
- * <p>{@code tryConsume} 用 Lua 脚本(GET 命中才 DEL 并返回 1)实现原子防重放:Redis
- * 单线程执行脚本,GET+DEL 之间不会插入其它命令,并发消费同一挑战恰好一次成功。
- * 不用 GETDEL 是因为它要求 Redis &gt;= 6.2,Lua 脚本兼容面更广(5.x 即可)。
- * 消费成功即 DEL 整个 key,不保留消费标记,因此 SPI 的 ttlMs 参数在此无需使用;
- * 过期语义由 save 时写入的 TTL 交给 Redis 管理,应用崩溃、无人消费的 key 也会被
- * Redis 自动回收,存储不会无界增长。
+ * <h3>原子消费与重放可观测</h3>
+ * <p>{@code tryConsume} 用 Lua 脚本实现原子防重放:Redis 单线程执行脚本,GET 与 DEL
+ * 之间不会插入其它命令,并发消费同一挑战恰好一次成功。不用 GETDEL 是因为它要求
+ * Redis &gt;= 6.2,Lua 脚本兼容面更广(5.x 即可)。
  *
+ * <p>消费成功后主 key 被删除,同时把记录写入消费标记 key {@code easy-pow:consumed:{challenge}}
+ * 并保留 SPI 的 ttlMs 作为标记存活时长,于是 {@link #find} 在标记窗口内仍能读回记录——
+ * 与 {@code InMemoryPowStorage} 语义一致:消费过的挑战再次校验得到 {@link PowStatus#REUSED}
+ * 而不是 EXPIRED,重放可观测、可计数、可被监听器/指标统计。标记到期后 find 返回 null,
+ * 重放退化为 EXPIRED,存储依旧不会无界增长。
  * <p>本类不绑定 Spring 上下文,自动装配见 {@link RedisPowAutoConfiguration}。
  *
  * @author created by lucky845
@@ -44,12 +46,17 @@ public class RedisPowStorage implements PowStorage {
     /** 序列化格式版本。 */
     private static final String VERSION = "v1";
 
+    /** 消费标记 key 前缀,完整 key 为 {@code easy-pow:consumed:{challenge}}。 */
+    public static final String CONSUMED_PREFIX = "easy-pow:consumed:";
+
     /**
-     * 原子消费脚本:GET 命中即 DEL 并返回 1,未命中(不存在或已过期被 Redis 回收)返回 0。
+     * 原子消费脚本:GET 命中即 DEL 主 key、把记录写入消费标记 key(KEYS[2],保留 ARGV[1] 毫秒)
+     * 并返回 1;未命中返回 0(未签发、已过期被 Redis 回收,或已消费且标记仍在)。
      */
     static final String CONSUME_LUA = "local v = redis.call('GET', KEYS[1]) "
             + "if not v then return 0 end "
             + "redis.call('DEL', KEYS[1]) "
+            + "redis.call('SET', KEYS[2], v, 'PX', ARGV[1]) "
             + "return 1";
 
     private static final RedisScript<Long> CONSUME_SCRIPT = RedisScript.of(CONSUME_LUA, Long.class);
@@ -84,24 +91,33 @@ public class RedisPowStorage implements PowStorage {
             return null;
         }
         String raw = redis.opsForValue().get(keyOf(challengeKey));
+        if (raw == null) {
+            // 已消费:主 key 已删,回退读消费标记,让校验链走到 tryConsume 得到 REUSED
+            raw = redis.opsForValue().get(consumedKeyOf(challengeKey));
+        }
         return raw == null ? null : decode(raw);
     }
 
     /**
      * 原子消费:Lua 脚本内 GET+DEL 不可分割,并发调用同一挑战恰好一次返回 true。
-     * 消费成功即删除 key,无需 ttlMs 兜底标记。
+     * 消费成功写入存活 ttlMs 的消费标记,使重复提交在标记窗口内得到 REUSED 而非 EXPIRED。
      */
     @Override
-    public boolean tryConsume(String challengeKey, long ttlMs) { // ttlMs 为 SPI 预留参数:消费即 DEL,无需保留标记
+    public boolean tryConsume(String challengeKey, long ttlMs) {
         if (challengeKey == null || challengeKey.isBlank()) {
             return false;
         }
-        Long consumed = redis.execute(CONSUME_SCRIPT, List.of(keyOf(challengeKey)));
+        Long consumed = redis.execute(CONSUME_SCRIPT,
+                List.of(keyOf(challengeKey), consumedKeyOf(challengeKey)), String.valueOf(Math.max(1L, ttlMs)));
         return Long.valueOf(1L).equals(consumed);
     }
 
     private static String keyOf(String challengeKey) {
         return DEFAULT_PREFIX + challengeKey;
+    }
+
+    private static String consumedKeyOf(String challengeKey) {
+        return CONSUMED_PREFIX + challengeKey;
     }
 
     static String encode(long expiresAtMs, long maxnumber) {

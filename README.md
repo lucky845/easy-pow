@@ -46,13 +46,13 @@ PoW(Proof of Work)无感验证码 Java 服务端库,协议兼容 [altcha](https:
 
 ### 方式一:Spring Boot starter(推荐)
 
-Maven 坐标(SNAPSHOT 期间请 `mvn install` 到本地或使用私有仓库):
+Maven 坐标(0.1.0 起已发布到 Maven Central;快照版本请 `mvn install` 到本地或使用私有仓库):
 
 ```xml
 <dependency>
   <groupId>io.github.lucky845</groupId>
   <artifactId>easy-pow-spring-boot-starter</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
@@ -115,7 +115,7 @@ public class LoginController {
 <dependency>
   <groupId>io.github.lucky845</groupId>
   <artifactId>easy-pow-core</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
@@ -200,9 +200,10 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.*` 自身无新增配置项�
 
 实现要点:
 
-- key:`easy-pow:challenge:{challenge}`;value:`v1;<expiresAtMs>;<maxnumber>` 自描述文本(不引 Jackson,与类结构、依赖版本解耦);
+- key:`easy-pow:challenge:{challenge}`(签发记录)与 `easy-pow:consumed:{challenge}`(消费标记);value:`v1;<expiresAtMs>;<maxnumber>` 自描述文本(不引 Jackson,与类结构、依赖版本解耦);
 - save 以 `SET key value EX` 写入(毫秒向上取整成秒,至少 1 秒),TTL 由 Redis 管理:应用崩溃、无人消费的 key 也会被自动回收,存储不会无界增长;
-- tryConsume 用 Lua 脚本(GET 命中才 DEL)原子防重放,并发消费同一挑战恰好一次成功;不依赖 `GETDEL`(需 Redis >= 6.2),5.x 即可;
+- tryConsume 用 Lua 脚本原子防重放:GET 命中即 DEL 主 key,并把记录写入消费标记 key(`easy-pow:consumed:{challenge}`,按 SPI 的 ttlMs 保留),并发消费同一挑战恰好一次成功;不依赖 `GETDEL`(需 Redis >= 6.2),5.x 即可;
+- 消费后的重复提交在标记窗口内得到 `REUSED`(而非 `EXPIRED`),与内存实现语义一致——重放可观测、可计数;标记到期后 find 返回 null,重放退化为 `EXPIRED`;
 - 过期由 Redis TTL 单点计时,存储层不依赖各实例本机时钟,多实例间无需为存储对时/NTP;`expiresAtMs` 仅剩校验器本地的一次比较,秒级漂移被 TTL 向上取整的 1 秒余量吸收,集群做常规 NTP 对时仍更稳。
 
 > 未连真实 Redis 的行为由 mock 测试佐证;上线前建议用真实 Redis 冒烟一次。
@@ -224,7 +225,7 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.*` 自身无新增配置项�
 
 ```
 mvn -pl easy-pow-demo -am package
-java -jar easy-pow-demo/target/easy-pow-demo-0.1.0-SNAPSHOT.jar
+java -jar easy-pow-demo/target/easy-pow-demo-0.1.1.jar
 ```
 
 1. 浏览器打开 <http://localhost:8080/>,页面自动完成"获取挑战 → 本地解题 → 校验"全流程(altcha 组件)。
@@ -302,7 +303,7 @@ altcha 组件无 WASM、逐次 `await crypto.subtle.digest`,实测速率 ≈10 �
 ## 构建
 
 ```
-mvn test                          # 跑测试(core 33 + starter 15 = 48 用例)
+mvn test                          # 跑测试(core 33 + starter 19 = 52 用例)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```
@@ -314,7 +315,7 @@ mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执
 
 ```bash
 # 1) 确认 main 分支测试全绿后打 tag(工作流自动把版本改为 tag 对应版本并发布)
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.1 && git push origin v0.1.1
 # 2) GitHub Actions「Release to Maven Central」跑完,组件在 Central 可搜(core + starter,demo 不发布)
 ```
 
@@ -324,7 +325,7 @@ git tag v0.1.0 && git push origin v0.1.0
 2. Portal 生成 **User Token**(username + password 两个值);
 3. 准备 GPG 密钥(口令已知),公钥分发到 `keyserver.ubuntu.com`;
 4. 仓库 Secrets 配置四个值:`CENTRAL_PORTAL_USERNAME` / `CENTRAL_PORTAL_TOKEN`(User Token 两值)、`GPG_PRIVATE_KEY`(私钥 armor 全文)、`GPG_PASSPHRASE`;
-5. 本地干跑验证(不发布):`mvn -B versions:set -DnewVersion=0.1.0 -DgenerateBackupPoms=false && mvn -B -Prelease -Dgpg.skip=true -DskipTests package`,确认 core/starter 产出 sources/javadoc jar 后 `versions:set` 回 `0.1.0-SNAPSHOT`。
+5. 本地干跑验证(不发布):`mvn -B versions:set -DnewVersion=0.1.1 -DgenerateBackupPoms=false && mvn -B -Prelease -Dgpg.skip=true -DskipTests package`,确认 core/starter 产出 sources/javadoc jar 后 `versions:set` 回 `0.1.1`。
 
 协议与坐标:groupId `io.github.lucky845`,Apache-2.0;组件仅 `easy-pow-core` 与 `easy-pow-spring-boot-starter`(`easy-pow-demo` 已从发布链排除)。
 
@@ -334,6 +335,7 @@ git tag v0.1.0 && git push origin v0.1.0
 - [x] Spring Boot starter(自动配置)
 - [x] 难度自适应(`AdaptiveDifficulty`:EWMA 锁定目标解题耗时,starter 一行开启)
 - [x] Maven Central 发布链(GPG 签名 + sources/javadoc + Central Portal 插件 + GitHub Actions tag 一键发布,见「发布 Maven Central」)
+- [x] 消费语义统一(内存 / Redis 一致):消费窗口内重放判为 `REUSED`,而不是 `EXPIRED`,重放可观测、可计数
 - [ ] 更多算法(SHA-512 / SHA3-256)
 
 ## 贡献

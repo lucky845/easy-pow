@@ -96,23 +96,26 @@ class RedisPowStorageTest {
     @Test
     @DisplayName("tryConsume 经 Lua 脚本原子消费,命中返回 true 且删除的是完整 key")
     void tryConsumeHitsLuaScriptAndReturnsTrue() {
-        when(redis.execute(any(RedisScript.class), anyList())).thenReturn(1L);
+        when(redis.execute(any(RedisScript.class), anyList(), any())).thenReturn(1L);
 
         assertTrue(storage.tryConsume("abc", 120_000L));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass((Class) List.class);
-        verify(redis).execute(any(RedisScript.class), keys.capture());
-        assertEquals(List.of("easy-pow:challenge:abc"), keys.getValue());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Object> ttlArg = ArgumentCaptor.forClass(Object.class);
+        verify(redis).execute(any(RedisScript.class), keys.capture(), ttlArg.capture());
+        assertEquals(List.of("easy-pow:challenge:abc", "easy-pow:consumed:abc"), keys.getValue());
+        assertEquals("120000", ttlArg.getValue());
     }
 
     @Test
     @DisplayName("tryConsume 未命中(0L)或空返回(null)均为 false")
     void tryConsumeMissReturnsFalse() {
-        when(redis.execute(any(RedisScript.class), anyList())).thenReturn(0L);
+        when(redis.execute(any(RedisScript.class), anyList(), any())).thenReturn(0L);
         assertFalse(storage.tryConsume("abc", 120_000L));
 
-        when(redis.execute(any(RedisScript.class), anyList())).thenReturn(null);
+        when(redis.execute(any(RedisScript.class), anyList(), any())).thenReturn(null);
         assertFalse(storage.tryConsume("abc", 120_000L));
     }
 
@@ -140,5 +143,27 @@ class RedisPowStorageTest {
         assertThrows(IllegalStateException.class, () -> RedisPowStorage.decode("v1;1"));
         assertThrows(IllegalStateException.class, () -> RedisPowStorage.decode("v1;x;2"));
         assertThrows(IllegalStateException.class, () -> RedisPowStorage.decode(""));
+    }
+
+    @Test
+    @DisplayName("find 主 key 未命中时回退读消费标记 key(重放可观测)")
+    void findFallsBackToConsumedMark() {
+        when(valueOps.get("easy-pow:challenge:abc")).thenReturn(null);
+        when(valueOps.get("easy-pow:consumed:abc")).thenReturn("v1;1002500;1000000");
+
+        PowStorage.ChallengeRecord record = storage.find("abc");
+
+        assertNotNull(record);
+        assertEquals(1_002_500L, record.expiresAtMs());
+        assertEquals(1_000_000L, record.maxnumber());
+    }
+
+    @Test
+    @DisplayName("消费脚本契约:写消费标记 key 且按 ARGV[1] 毫秒过期")
+    void consumeScriptWritesConsumedMark() {
+        assertTrue(RedisPowStorage.CONSUME_LUA.contains("redis.call('SET', KEYS[2], v, 'PX', ARGV[1])"),
+                "脚本须把记录写入 KEYS[2] 消费标记并按 ARGV[1] 毫秒保留");
+        assertTrue(RedisPowStorage.CONSUME_LUA.contains("redis.call('DEL', KEYS[1])"));
+        assertEquals("easy-pow:consumed:", RedisPowStorage.CONSUMED_PREFIX);
     }
 }
