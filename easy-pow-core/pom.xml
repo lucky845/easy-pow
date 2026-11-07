@@ -8,7 +8,7 @@
   <parent>
     <groupId>io.github.lucky845</groupId>
     <artifactId>easy-pow</artifactId>
-    <version>0.1.1</version>
+    <version>0.1.2</version>
   </parent>
 
   <artifactId>easy-pow-core</artifactId>
