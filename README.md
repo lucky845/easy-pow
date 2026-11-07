@@ -206,7 +206,7 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.*` 自身无新增配置项�
 - 消费后的重复提交在标记窗口内得到 `REUSED`(而非 `EXPIRED`),与内存实现语义一致——重放可观测、可计数;标记到期后 find 返回 null,重放退化为 `EXPIRED`;
 - 过期由 Redis TTL 单点计时,存储层不依赖各实例本机时钟,多实例间无需为存储对时/NTP;`expiresAtMs` 仅剩校验器本地的一次比较,秒级漂移被 TTL 向上取整的 1 秒余量吸收,集群做常规 NTP 对时仍更稳。
 
-> 未连真实 Redis 的行为由 mock 测试佐证;上线前建议用真实 Redis 冒烟一次。
+> mock 测试校验脚本参数与 key 命名;`RedisPowStorageRealRedisTest` 用 `embedded-redis` 自动拉起真实 redis-server(内置 darwin/linux 二进制,无需本机安装 Redis 或 Docker),经真实 RESP 协议验证脚本原子性、标记 TTL 与重放可观测,CI 同样执行(首次运行会从 Maven Central 拉取该 test scope 依赖)。
 
 ## 与 altcha 前端对接
 
@@ -303,7 +303,7 @@ altcha 组件无 WASM、逐次 `await crypto.subtle.digest`,实测速率 ≈10 �
 ## 构建
 
 ```
-mvn test                          # 跑测试(core 33 + starter 19 = 52 用例)
+mvn test                          # 跑测试(core 33 + starter 24 = 57 用例,其中 5 例是真机 Redis 冒烟)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```
@@ -327,7 +327,7 @@ git tag v0.1.1 && git push origin v0.1.1
 4. 仓库 Secrets 配置四个值:`CENTRAL_PORTAL_USERNAME` / `CENTRAL_PORTAL_TOKEN`(User Token 两值)、`GPG_PRIVATE_KEY`(私钥 armor 全文)、`GPG_PASSPHRASE`;
 5. 本地干跑验证(不发布):`mvn -B versions:set -DnewVersion=0.1.1 -DgenerateBackupPoms=false && mvn -B -Prelease -Dgpg.skip=true -DskipTests package`,确认 core/starter 产出 sources/javadoc jar 后 `versions:set` 回 `0.1.1`。
 
-协议与坐标:groupId `io.github.lucky845`,Apache-2.0;组件仅 `easy-pow-core` 与 `easy-pow-spring-boot-starter`(`easy-pow-demo` 已从发布链排除)。
+协议与坐标:groupId `io.github.lucky845`,Apache-2.0;组件仅 `easy-pow-core` 与 `easy-pow-spring-boot-starter`(`easy-pow-demo` 已从发布链排除:release profile 内 `skipPublishing`,不再空跑 publish)。
 
 ## Roadmap
 
@@ -336,6 +336,7 @@ git tag v0.1.1 && git push origin v0.1.1
 - [x] 难度自适应(`AdaptiveDifficulty`:EWMA 锁定目标解题耗时,starter 一行开启)
 - [x] Maven Central 发布链(GPG 签名 + sources/javadoc + Central Portal 插件 + GitHub Actions tag 一键发布,见「发布 Maven Central」)
 - [x] 消费语义统一(内存 / Redis 一致):消费窗口内重放判为 `REUSED`,而不是 `EXPIRED`,重放可观测、可计数
+- [x] 真机 Redis 冒烟用例(`embedded-redis` 自动拉起,无需本机 Redis / Docker,CI 可跑)
 - [ ] 更多算法(SHA-512 / SHA3-256)
 
 ## 贡献

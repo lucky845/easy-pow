@@ -37,6 +37,18 @@
       <optional>true</optional>
     </dependency>
 
+    <!--
+      真机 Redis 冒烟:embedded-redis 内置各平台 redis-server 二进制(darwin-arm64 / linux-amd64),
+      测试期拉起真实服务走 Lettuce 真实 RESP 协议,不需要本机安装 Redis 或 Docker。
+      仅 test scope,不进入发布产物,也不传递给使用者。
+    -->
+    <dependency>
+      <groupId>com.github.codemonstur</groupId>
+      <artifactId>embedded-redis</artifactId>
+      <version>1.4.3</version>
+      <scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
