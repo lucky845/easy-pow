@@ -321,6 +321,8 @@ git tag v0.1.2 && git push origin v0.1.2
 # 2) GitHub Actions「Release to Maven Central」跑完,组件在 Central 可搜(core + starter,demo 不发布)
 ```
 
+变更记录见 [CHANGELOG.md](CHANGELOG.md),每次发布同步更新。
+
 **首次启用前的一次性配置**:
 
 1. 注册 [Central Portal](https://central.sonatype.com/),创建 namespace `io.github.lucky845`,按提示在 GitHub 侧建 lucky845/easy-pow 公开仓库完成域名归属验证;
