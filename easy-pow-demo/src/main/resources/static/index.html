@@ -60,8 +60,9 @@
     const resultPre = document.getElementById("result");
     let current = null;
 
-    async function sha256Hex(text) {
-        const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    /** 与服务端 config algorithm 一致:挑战里带什么算法就用什么算法摘要(WebCrypto 直接吃 SHA-256/384/512)。 */
+    async function digestHex(text, algorithm) {
+        const buf = await crypto.subtle.digest(algorithm, new TextEncoder().encode(text));
         return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
     }
 
@@ -83,7 +84,7 @@
         try {
             let number = -1;
             for (let n = 0; n <= current.maxnumber; n++) {
-                if ((await sha256Hex(current.salt + n)) === current.challenge) { number = n; break; }
+                if ((await digestHex(current.salt + n, current.algorithm)) === current.challenge) { number = n; break; }
             }
             if (number < 0) throw new Error("未找到解");
             const solution = {

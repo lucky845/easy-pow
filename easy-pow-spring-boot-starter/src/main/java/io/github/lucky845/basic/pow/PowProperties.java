@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   secret: change-me   # 必填,无默认值,严禁下发到前端
  *   maxnumber: 1000000  # 难度上限,默认 1000000
  *   ttl-ms: 120000      # 有效期(毫秒),默认 120000
+ *   algorithm: SHA-256  # PoW 算法,可选 SHA-256 / SHA-384 / SHA-512,默认 SHA-256
  * </pre>
  */
 @ConfigurationProperties(prefix = PowProperties.PREFIX)
@@ -26,6 +27,9 @@ public class PowProperties {
     /** 默认有效期(毫秒)。 */
     private long ttlMs = PowConfig.DEFAULT_TTL_MS;
 
+    /** PoW 算法名,须在 {@link Hashes#SUPPORTED} 内;与 altcha 前端支持的清单一致。 */
+    private String algorithm = PowConfig.DEFAULT_ALGORITHM;
+
     /** 难度自适应(默认关闭):按"签发 → 校验通过"实际耗时动态调整难度上限。 */
     private final Adaptive adaptive = new Adaptive();
 
@@ -34,7 +38,7 @@ public class PowProperties {
         if (secret == null || secret.isBlank()) {
             throw new IllegalStateException("配置 " + PREFIX + ".secret 必填,且不能为空白字符串");
         }
-        return new PowConfig(secret, maxNumber, ttlMs);
+        return new PowConfig(secret, maxNumber, ttlMs, algorithm);
     }
 
     public String getSecret() {
@@ -59,6 +63,14 @@ public class PowProperties {
 
     public void setTtlMs(long ttlMs) {
         this.ttlMs = ttlMs;
+    }
+
+    public String getAlgorithm() {
+        return algorithm;
+    }
+
+    public void setAlgorithm(String algorithm) {
+        this.algorithm = algorithm;
     }
 
     public Adaptive getAdaptive() {

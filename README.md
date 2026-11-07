@@ -10,7 +10,7 @@
 [![Java](https://img.shields.io/badge/Java-21+-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-48%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-62%20passed-brightgreen)]()
 
 </div>
 
@@ -20,7 +20,7 @@ PoW(Proof of Work)无感验证码 Java 服务端库,协议兼容 [altcha](https:
 
 - 零依赖核心:仅 JDK 21+ 标准库(compile scope 无任何第三方依赖)
 - 协议兼容 altcha 前端:challenge/solution 字段名与官方一致,接受 `base64(JSON)` 或原始 JSON
-- 安全默认:SHA-256 + HMAC-SHA256 签名;签名与哈希均常量时间比较;随机盐 128 bit 熵
+- 安全默认:SHA-256 / SHA-384 / SHA-512 可选,签名与摘要同族同算法;算法名不参与签名,校验按服务端配置判等(拒绝降级);签名与哈希均常量时间比较;随机盐 128 bit 熵
 - 防重放:内置 `PowStorage` SPI,默认内存实现(懒清理,不会无界增长);starter 另内置 Redis 实现,多实例部署开箱即用
 - 开箱即用的 Spring Boot starter:自动装配 Issuer / Verifier / 存储(检测到 Redis 自动切 Redis,否则内存兜底,同一存储实例)
 - 难度自适应(可选):按"签发 → 校验通过"的实际耗时(EWMA)动态调整难度上限,把浏览器解题时长锁定在目标值,慢设备自动降难、脚本性价比自动抬升
@@ -63,6 +63,7 @@ easy-pow:
   secret: change-me-to-a-long-random-secret  # 必填,无默认值,严禁下发到前端
   maxnumber: 1000000                         # 难度上限,默认 1000000
   ttl-ms: 120000                             # 有效期(毫秒),默认 120000
+  algorithm: SHA-256                         # PoW 算法:SHA-256 / SHA-384 / SHA-512,默认 SHA-256
   # 难度自适应(可选,默认关闭):详见「难度自适应」
   # adaptive:
   #   enabled: true                           # 开启后 maxnumber 为基准难度
@@ -145,9 +146,10 @@ if (result.status() == PowStatus.PASSED) {
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `secret` | String | 无,**必填** | HMAC-SHA256 签名密钥,严禁下发到前端;生产环境必须替换为强随机值 |
+| `secret` | String | 无,**必填** | HMAC 签名密钥,严禁下发到前端;生产环境必须替换为强随机值 |
 | `maxnumber` | int | `1000000` | 难度上界(基准难度);浏览器场景推荐 50000,见「难度调优」 |
 | `ttl-ms` | long | `120000` | 挑战有效期(毫秒) |
+| `algorithm` | String | `SHA-256` | PoW 算法,可选 `SHA-256` / `SHA-384` / `SHA-512`;与 altcha 前端支持的清单一致(altcha@2 dist 实证),SHA3 系列前端不支持故不提供。切换算法会使在途挑战立即失效(校验按当前配置复算),建议在低峰切换 |
 | `adaptive.enabled` | boolean | `false` | 难度自适应开关;关闭时难度恒为 `maxnumber` |
 | `adaptive.target-solve-ms` | long | `500` | 目标解题耗时(毫秒) |
 | `adaptive.min-maxnumber` | int | `1000` | 自适应难度下限(≥ 1000) |
@@ -161,15 +163,15 @@ sequenceDiagram
     participant B as 浏览器 altcha widget
     participant S as 服务端 easy-pow
     B->>S: GET /pow/challenge
-    S->>S: 生成 salt 与 number,challenge=SHA-256(salt+number),HMAC-SHA256 签名
+    S->>S: 生成 salt 与 number,challenge=algorithm(salt+number),HMAC-algorithm 签名
     S-->>B: {algorithm, challenge, maxnumber, salt, signature}
-    B->>B: 暴力枚举 number 直至 sha256(salt+number)==challenge
+    B->>B: 暴力枚举 number 直至 algorithm(salt+number)==challenge
     B-->>S: solution 以 base64(JSON) 回传
     S->>S: 复算哈希 + 验签 + 有效期 + 原子防重放
     S-->>B: success 或失败原因
 ```
 
-服务端生成随机盐 salt 并随机选定 number∈[0, maxnumber],令 challenge = SHA-256(salt + number),再用 HMAC-SHA256(secret, challenge) 签名,把 `{algorithm, challenge, maxnumber, salt, signature}` 下发给前端;前端暴力枚举 number 直到哈希命中(浏览器毫秒级),将 solution 回传;服务端复算哈希、验签、检查有效期并原子防重放。校验通过即证明客户端付出了一定算力,脚本批量请求的成本被显著抬高,真实用户全程无感。
+服务端生成随机盐 salt 并随机选定 number∈[0, maxnumber],令 challenge = algorithm(salt + number)(algorithm 由配置决定,默认 SHA-256),再用同族 HMAC 签名,把 `{algorithm, challenge, maxnumber, salt, signature}` 下发给前端;前端暴力枚举 number 直到哈希命中(浏览器毫秒级),将 solution 回传;服务端复算哈希、验签、检查有效期并原子防重放。校验通过即证明客户端付出了一定算力,脚本批量请求的成本被显著抬高,真实用户全程无感。
 
 ## 多实例部署(Redis 存储)
 
@@ -337,7 +339,8 @@ git tag v0.1.1 && git push origin v0.1.1
 - [x] Maven Central 发布链(GPG 签名 + sources/javadoc + Central Portal 插件 + GitHub Actions tag 一键发布,见「发布 Maven Central」)
 - [x] 消费语义统一(内存 / Redis 一致):消费窗口内重放判为 `REUSED`,而不是 `EXPIRED`,重放可观测、可计数
 - [x] 真机 Redis 冒烟用例(`embedded-redis` 自动拉起,无需本机 Redis / Docker,CI 可跑)
-- [ ] 更多算法(SHA-512 / SHA3-256)
+- [x] 多算法支持(`easy-pow.algorithm`):SHA-256 / SHA-384 / SHA-512,与 altcha 前端清单一致
+- [ ] SHA3 系列(需前端先支持;altcha@2 dist 无 SHA3 实现,不提供以免配置出前端解不了的挑战)
 
 ## 贡献
 

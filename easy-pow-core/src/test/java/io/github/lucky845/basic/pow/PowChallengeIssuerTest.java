@@ -25,6 +25,15 @@ class PowChallengeIssuerTest {
         assertEquals(32, challenge.salt().length()); // 16 字节熵 = 32 hex 字符
         assertTrue(challenge.expiresAt() > System.currentTimeMillis());
         // 签名可用同一 secret 复算验证
-        assertEquals(Hashes.hmacSha256Hex(config.secret(), challenge.challenge()), challenge.signature());
+        assertEquals(Hashes.hmacHex("SHA-256", config.secret(), challenge.challenge()), challenge.signature());
+    }
+
+    @Test
+    void issuesWithConfiguredAlgorithm() {
+        PowConfig sha512 = new PowConfig("test-secret", PowConfig.DEFAULT_MAXNUMBER, PowConfig.DEFAULT_TTL_MS, "SHA-512");
+        PowChallenge challenge = new PowChallengeIssuer(sha512).issue(2000, 60_000);
+        assertEquals("SHA-512", challenge.algorithm());
+        assertEquals(128, challenge.challenge().length());
+        assertEquals(Hashes.hmacHex("SHA-512", sha512.secret(), challenge.challenge()), challenge.signature());
     }
 }

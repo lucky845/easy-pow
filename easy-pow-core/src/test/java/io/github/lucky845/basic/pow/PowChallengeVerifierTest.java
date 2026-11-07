@@ -22,7 +22,7 @@ class PowChallengeVerifierTest {
     /** 暴力解出 number(测试里 maxnumber 很小,毫秒级)。 */
     private static long solve(PowChallenge challenge) {
         for (long n = 0; n <= challenge.maxnumber(); n++) {
-            if (Hashes.sha256Hex(challenge.salt() + n).equals(challenge.challenge())) {
+            if (Hashes.shaHex(challenge.algorithm(), challenge.salt() + n).equals(challenge.challenge())) {
                 return n;
             }
         }
@@ -109,7 +109,7 @@ class PowChallengeVerifierTest {
     @Test
     void unsupportedAlgorithmIsBadSolution() {
         PowChallenge challenge = issuer.issue(2000, 120_000);
-        String payload = solutionJson(challenge, solve(challenge)).replace("SHA-256", "SHA-512");
+        String payload = solutionJson(challenge, solve(challenge)).replace("SHA-256", "SHA3-256");
         assertEquals(PowStatus.BAD_SOLUTION, verifier.verify(payload).status());
     }
 
@@ -117,8 +117,8 @@ class PowChallengeVerifierTest {
     void numberAboveMaxnumberIsDifficultyExceeded() {
         String salt = "00112233445566778899aabbccddeeff";
         long number = 5000;
-        String challenge = Hashes.sha256Hex(salt + number);
-        String signature = Hashes.hmacSha256Hex(SECRET, challenge);
+        String challenge = Hashes.shaHex("SHA-256", salt + number);
+        String signature = Hashes.hmacHex("SHA-256", SECRET, challenge);
         storage.save(challenge, System.currentTimeMillis() + 60_000, 1000);
         String payload = "{\"algorithm\":\"SHA-256\",\"challenge\":\"" + challenge
                 + "\",\"number\":" + number + ",\"salt\":\"" + salt
@@ -132,5 +132,28 @@ class PowChallengeVerifierTest {
         assertEquals(PowStatus.BAD_SOLUTION, verifier.verify("").status());
         assertEquals(PowStatus.BAD_SOLUTION, verifier.verify("###").status());
         assertEquals(PowStatus.BAD_SOLUTION, verifier.verify("{\"algorithm\":\"SHA-256\"}").status());
+    }
+
+    private static PowConfig sha512Config() {
+        return new PowConfig(SECRET, PowConfig.DEFAULT_MAXNUMBER, PowConfig.DEFAULT_TTL_MS, "SHA-512");
+    }
+
+    @Test
+    void sha512RoundTripPasses() {
+        PowStorage shared = new InMemoryPowStorage();
+        PowChallenge challenge = new PowChallengeIssuer(sha512Config(), shared).issue(2000, 120_000);
+        assertEquals("SHA-512", challenge.algorithm());
+        assertEquals(128, challenge.challenge().length()); // SHA-512 = 64 字节 hex
+        PowChallengeVerifier sha512Verifier = new PowChallengeVerifier(sha512Config(), shared);
+        assertEquals(PowStatus.PASSED, sha512Verifier.verify(solutionJson(challenge, solve(challenge))).status());
+    }
+
+    @Test
+    void algorithmMismatchIsBadSolution() {
+        // 算法名不参与签名:用 SHA-512 签发却声明 SHA-256,必须被配置层拒绝(防降级)
+        PowStorage shared = new InMemoryPowStorage();
+        PowChallenge challenge = new PowChallengeIssuer(sha512Config(), shared).issue(2000, 120_000);
+        String payload = solutionJson(challenge, solve(challenge)).replace("SHA-512", "SHA-256");
+        assertEquals(PowStatus.BAD_SOLUTION, new PowChallengeVerifier(sha512Config(), shared).verify(payload).status());
     }
 }

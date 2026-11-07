@@ -94,7 +94,7 @@ class RedisPowReplayTest {
     private static String solutionJson(PowChallenge challenge) {
         long number = -1;
         for (long n = 0; n <= challenge.maxnumber(); n++) {
-            if (Hashes.sha256Hex(challenge.salt() + n).equals(challenge.challenge())) {
+            if (Hashes.shaHex(challenge.algorithm(), challenge.salt() + n).equals(challenge.challenge())) {
                 number = n;
                 break;
             }
