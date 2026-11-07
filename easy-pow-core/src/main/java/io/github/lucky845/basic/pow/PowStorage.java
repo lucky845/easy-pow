@@ -15,7 +15,9 @@ public interface PowStorage {
     void save(String challengeKey, long expiresAtMs, long maxnumber);
 
     /**
-     * @return 签发记录;不存在(未签发、已过期或已消费且被清理)返回 null
+     * @return 签发记录;不存在(未签发、已过期被清理、或已消费且消费标记也已过期)返回 null。
+     *         实现须保证:已消费但消费标记仍在保留期内时仍返回记录,让校验链把重放判定为
+     *         {@link PowStatus#REUSED} 而不是 {@link PowStatus#EXPIRED}
      */
     ChallengeRecord find(String challengeKey);
 
@@ -23,7 +25,8 @@ public interface PowStorage {
      * 原子消费,防重放:并发调用同一 challengeKey 时恰好一次返回 true。
      * 实现应同时拒绝已过期条目,并保证条目最终被清理、存储不会无界增长。
      *
-     * @param ttlMs 消费标记保留时长提示(毫秒);分布式实现可用作 Redis 过期兜底
+     * @param ttlMs 消费标记保留时长提示(毫秒);实现应以此为消费标记的存续时间,
+     *              使重复提交在标记窗口内可被识别为重放
      */
     boolean tryConsume(String challengeKey, long ttlMs);
 }
