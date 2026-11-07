@@ -53,4 +53,26 @@
       </plugin>
     </plugins>
   </build>
+  <!--
+    发布链:父 pom 的 release profile 会把 central-publishing-maven-plugin 注入每个模块,
+    demo 虽已 maven.deploy.skip + 父 pom excludeArtifacts 排除,插件仍会空跑一次 publish 并等待 Portal 结果。
+    这里用同名 profile 显式 skipPublishing,让"demo 不进发布链"名副其实。
+  -->
+  <profiles>
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>${central.publishing.plugin.version}</version>
+            <configuration>
+              <skipPublishing>true</skipPublishing>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
