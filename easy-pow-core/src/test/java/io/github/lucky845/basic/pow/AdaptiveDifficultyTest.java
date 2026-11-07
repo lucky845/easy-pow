@@ -146,7 +146,7 @@ class AdaptiveDifficultyTest {
 
     private static long solve(PowChallenge challenge) {
         for (long n = 0; n <= challenge.maxnumber(); n++) {
-            if (Hashes.sha256Hex(challenge.salt() + n).equals(challenge.challenge())) {
+            if (Hashes.shaHex(challenge.algorithm(), challenge.salt() + n).equals(challenge.challenge())) {
                 return n;
             }
         }

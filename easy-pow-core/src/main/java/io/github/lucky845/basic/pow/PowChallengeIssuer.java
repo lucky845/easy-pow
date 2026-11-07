@@ -51,7 +51,8 @@ public final class PowChallengeIssuer {
     }
 
     /**
-     * 签发挑战:challenge = sha256(salt + number),signature = HMAC-SHA256(secret, challenge)。
+     * 签发挑战:challenge = algorithm(salt + number),signature = HMAC-algorithm(secret, challenge);
+     * 算法取自 {@link PowConfig#algorithm()}(SHA-256 / SHA-384 / SHA-512)。
      *
      * @param maxnumber 难度上限,number ∈ [0, maxnumber],需 ≥ 1000
      * @param ttlMs     有效期(毫秒),需 > 0
@@ -68,14 +69,15 @@ public final class PowChallengeIssuer {
         random.nextBytes(saltBytes);
         String salt = Hex.encode(saltBytes);
         long number = randomUpTo(maxnumber + 1); // [0, maxnumber] 闭区间
-        String challenge = Hashes.sha256Hex(salt + number);
-        String signature = Hashes.hmacSha256Hex(config.secret(), challenge);
+        String algorithm = config.algorithm();
+        String challenge = Hashes.shaHex(algorithm, salt + number);
+        String signature = Hashes.hmacHex(algorithm, config.secret(), challenge);
         long expiresAt = System.currentTimeMillis() + ttlMs;
         storage.save(challenge, expiresAt, maxnumber);
         if (listener != null) {
             listener.onIssued(challenge);
         }
-        return new PowChallenge(Hashes.ALGORITHM, challenge, maxnumber, salt, signature, expiresAt);
+        return new PowChallenge(algorithm, challenge, maxnumber, salt, signature, expiresAt);
     }
 
     /** 均匀分布的 [0, bound) 拒绝采样,无modulo偏差。 */

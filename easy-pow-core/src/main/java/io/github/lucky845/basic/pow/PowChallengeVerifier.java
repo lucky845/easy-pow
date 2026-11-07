@@ -2,7 +2,7 @@ package io.github.lucky845.basic.pow;
 
 /**
  * solution 校验器。校验链(任一环节失败即短路返回对应 {@link PowResult}):
- * 解析 → 算法名 → HMAC 签名(常量时间)→ sha256(salt+number)(常量时间)
+ * 解析 → 算法名(受支持且与配置一致,拒降级)→ HMAC 签名(常量时间)→ algorithm(salt+number)(常量时间)
  * → number ≤ maxnumber → 未过期 → 存储原子消费(防重放)。
  */
 public final class PowChallengeVerifier {
@@ -38,14 +38,22 @@ public final class PowChallengeVerifier {
             return PowResult.fail(PowStatus.BAD_SOLUTION,
                     "solution 解析失败:须为 base64(JSON) 或扁平 JSON,含 algorithm/challenge/number/salt/signature", null);
         }
-        if (!Hashes.ALGORITHM.equals(solution.algorithm())) {
+        if (!Hashes.isSupported(solution.algorithm())) {
             return PowResult.fail(PowStatus.BAD_SOLUTION, "不支持的算法: " + solution.algorithm(), solution.challenge());
         }
-        if (!Hashes.equalsHex(Hashes.hmacSha256Hex(config.secret(), solution.challenge()), solution.signature())) {
+        // 算法名不参与签名,必须在服务端配置层拒绝降级(否则攻击者可自选弱算法重算 challenge)
+        if (!config.algorithm().equals(solution.algorithm())) {
+            return PowResult.fail(PowStatus.BAD_SOLUTION,
+                    "算法与当前配置不一致(期望 " + config.algorithm() + "): " + solution.algorithm(),
+                    solution.challenge());
+        }
+        if (!Hashes.equalsHex(Hashes.hmacHex(config.algorithm(), config.secret(), solution.challenge()),
+                solution.signature())) {
             return PowResult.fail(PowStatus.BAD_SIGNATURE, "HMAC 签名不匹配:secret 不一致或字段被篡改", solution.challenge());
         }
-        if (!Hashes.equalsHex(Hashes.sha256Hex(solution.salt() + solution.number()), solution.challenge())) {
-            return PowResult.fail(PowStatus.BAD_SOLUTION, "sha256(salt+number) 与 challenge 不匹配", solution.challenge());
+        if (!Hashes.equalsHex(Hashes.shaHex(config.algorithm(), solution.salt() + solution.number()),
+                solution.challenge())) {
+            return PowResult.fail(PowStatus.BAD_SOLUTION, "摘要(salt+number)与 challenge 不匹配", solution.challenge());
         }
         PowStorage.ChallengeRecord record = storage.find(solution.challenge());
         if (record == null) {
