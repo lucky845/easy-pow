@@ -52,7 +52,7 @@ Maven 坐标(0.1.0 起已发布到 Maven Central;快照版本请 `mvn install` �
 <dependency>
   <groupId>io.github.lucky845</groupId>
   <artifactId>easy-pow-spring-boot-starter</artifactId>
-  <version>0.1.1</version>
+  <version>0.1.2</version>
 </dependency>
 ```
 
@@ -116,7 +116,7 @@ public class LoginController {
 <dependency>
   <groupId>io.github.lucky845</groupId>
   <artifactId>easy-pow-core</artifactId>
-  <version>0.1.1</version>
+  <version>0.1.2</version>
 </dependency>
 ```
 
@@ -227,7 +227,7 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.*` 自身无新增配置项�
 
 ```
 mvn -pl easy-pow-demo -am package
-java -jar easy-pow-demo/target/easy-pow-demo-0.1.1.jar
+java -jar easy-pow-demo/target/easy-pow-demo-0.1.2.jar
 ```
 
 1. 浏览器打开 <http://localhost:8080/>,页面自动完成"获取挑战 → 本地解题 → 校验"全流程(altcha 组件)。
@@ -317,7 +317,7 @@ mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执
 
 ```bash
 # 1) 确认 main 分支测试全绿后打 tag(工作流自动把版本改为 tag 对应版本并发布)
-git tag v0.1.1 && git push origin v0.1.1
+git tag v0.1.2 && git push origin v0.1.2
 # 2) GitHub Actions「Release to Maven Central」跑完,组件在 Central 可搜(core + starter,demo 不发布)
 ```
 
@@ -327,7 +327,7 @@ git tag v0.1.1 && git push origin v0.1.1
 2. Portal 生成 **User Token**(username + password 两个值);
 3. 准备 GPG 密钥(口令已知),公钥分发到 `keyserver.ubuntu.com`;
 4. 仓库 Secrets 配置四个值:`CENTRAL_PORTAL_USERNAME` / `CENTRAL_PORTAL_TOKEN`(User Token 两值)、`GPG_PRIVATE_KEY`(私钥 armor 全文)、`GPG_PASSPHRASE`;
-5. 本地干跑验证(不发布):`mvn -B versions:set -DnewVersion=0.1.1 -DgenerateBackupPoms=false && mvn -B -Prelease -Dgpg.skip=true -DskipTests package`,确认 core/starter 产出 sources/javadoc jar 后 `versions:set` 回 `0.1.1`。
+5. 本地干跑验证(不发布):`mvn -B versions:set -DnewVersion=0.1.2 -DgenerateBackupPoms=false && mvn -B -Prelease -Dgpg.skip=true -DskipTests package`,确认 core/starter 产出 sources/javadoc jar 后 `versions:set` 回 `0.1.2`。
 
 协议与坐标:groupId `io.github.lucky845`,Apache-2.0;组件仅 `easy-pow-core` 与 `easy-pow-spring-boot-starter`(`easy-pow-demo` 已从发布链排除:release profile 内 `skipPublishing`,不再空跑 publish)。
 
