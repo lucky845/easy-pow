@@ -127,6 +127,21 @@ class PowChallengeVerifierTest {
     }
 
     @Test
+    void clientSuppliedMaxnumberCannotRaiseTheBound() {
+        // solution 里的 maxnumber 是客户端自填的:攻击者塞一个巨大值也不能把上界抬起来,
+        // 上界只能来自服务端存储的签发记录。
+        String salt = "00112233445566778899aabbccddeeff";
+        long number = 5000;
+        String challenge = Hashes.shaHex("SHA-256", salt + number);
+        String signature = Hashes.hmacHex("SHA-256", SECRET, challenge);
+        storage.save(challenge, System.currentTimeMillis() + 60_000, 1000);
+        String payload = "{\"algorithm\":\"SHA-256\",\"challenge\":\"" + challenge
+                + "\",\"number\":" + number + ",\"salt\":\"" + salt
+                + "\",\"signature\":\"" + signature + "\",\"maxnumber\":900000000}";
+        assertEquals(PowStatus.DIFFICULTY_EXCEEDED, verifier.verify(payload).status());
+    }
+
+    @Test
     void unparseablePayloadIsBadSolution() {
         assertEquals(PowStatus.BAD_SOLUTION, verifier.verify(null).status());
         assertEquals(PowStatus.BAD_SOLUTION, verifier.verify("").status());
