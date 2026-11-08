@@ -66,6 +66,8 @@ public final class PowChallengeVerifier {
             return fail(PowStatus.EXPIRED,
                     "challenge 无签发记录:未签发、已过期被清理,或签发/校验未使用同一存储", solution.challenge());
         }
+        // 上界必须以服务端存储的记录为准:solution 里的 maxnumber 是客户端自填的,不可信;
+        // 正常解 number ∈ [0, maxnumber],超出即说明攻击者枚举了更大空间,直接拒绝。
         if (solution.number() > record.maxnumber()) {
             return fail(PowStatus.DIFFICULTY_EXCEEDED,
                     "number " + solution.number() + " 超过难度上限 " + record.maxnumber(), solution.challenge());

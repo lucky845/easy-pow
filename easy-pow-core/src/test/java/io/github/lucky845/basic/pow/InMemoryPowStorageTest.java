@@ -102,6 +102,20 @@ class InMemoryPowStorageTest {
     }
 
     @Test
+    void sweptOutEntriesDoNotTriggerRescanOnEverySave() {
+        // 无容量上限时,超过阈值后的每次 save 都做全表扫描会把阈值节流变成 O(n²)。
+        // 这里通过反射读 compactionDebt,锁死"清理完成后不再扫描"。
+        InMemoryPowStorage storage = new InMemoryPowStorage();
+        long past = System.currentTimeMillis() - 1;
+        for (int i = 0; i < InMemoryPowStorage.COMPACT_THRESHOLD; i++) {
+            storage.save("expired-" + i, past, 1000);
+        }
+        // 触发一次扫描:这些条目全部过期,清空后债务归零
+        storage.save("fresh-1", System.currentTimeMillis() + 60_000, 1000);
+        assertEquals(0, compactionDebt(storage), "清理足够多的条目后不应再留债务");
+    }
+
+    @Test
     void consumedEntryDisappearsAfterRetentionWindow() throws Exception {
         InMemoryPowStorage storage = new InMemoryPowStorage();
         storage.save("k", System.currentTimeMillis() + 60_000, 1000);
@@ -110,4 +124,14 @@ class InMemoryPowStorageTest {
         assertNotNull(storage.find("k"));
         Thread.sleep(60);
         assertNull(storage.find("k"));
+    }
+
+    private static int compactionDebt(InMemoryPowStorage storage) {
+        try {
+            java.lang.reflect.Field f = InMemoryPowStorage.class.getDeclaredField("compactionDebt");
+            f.setAccessible(true);
+            return (int) f.get(storage);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("compactionDebt 字段不存在", e);
+        }
     }}
