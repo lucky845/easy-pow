@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>{@code pow.challenge.verified} — 校验通过数(Counter)</li>
  *   <li>{@code pow.maxnumber} — 当前难度上限(Gauge);未挂载自适应时恒为配置值</li>
  *   <li>{@code pow.solve.ms.ewma} — 解题耗时 EWMA 毫秒(Gauge);无观测时为 -1</li>
+ *   <li>{@code pow.adaptive.hashes.per.ms} — 客户端算力 EWMA 次/毫秒(Gauge);无观测时为 -1</li>
  *   <li>{@code pow.verify.rejected} — 按 {@code reason} 标签分类的拒绝计数(Counter),
  *       reason 取值见 {@link PowStatus} 的小写名(bad_signature / bad_solution / expired /
  *       difficulty_exceeded / reused / storage_error)</li>
@@ -36,6 +37,8 @@ public class PoWMetrics implements PowDifficultyListener {
     public static final String MAXNUMBER = "pow.maxnumber";
     /** 解题耗时 EWMA(毫秒);无观测时为 -1,不参与聚合。 */
     public static final String SOLVE_MS_EWMA = "pow.solve.ms.ewma";
+    /** 客户端算力 EWMA(次/毫秒);无观测时为 -1。 */
+    public static final String HASHES_PER_MS = "pow.adaptive.hashes.per.ms";
     /** 按拒绝原因分类的拒绝计数,标签名 {@code reason}。 */
     public static final String REJECTED = "pow.verify.rejected";
     /** 存储故障累计次数(含熔断与恢复)。 */
@@ -106,6 +109,10 @@ public class PoWMetrics implements PowDifficultyListener {
         Gauge.builder(SOLVE_MS_EWMA, this, PoWMetrics::currentSolveMsEwma)
                 .description("解题耗时 EWMA 毫秒(无观测时为 -1)")
                 .register(registry);
+        // 耗时只说"慢了"还是"快了";算力才说"该不该调难度",两者缺一都会误判
+        Gauge.builder(HASHES_PER_MS, this, PoWMetrics::currentHashesPerMs)
+                .description("客户端算力 EWMA(次/毫秒,无观测时为 -1)")
+                .register(registry);
     }
 
     @Override
@@ -158,5 +165,10 @@ public class PoWMetrics implements PowDifficultyListener {
     /** 解题耗时 EWMA:未挂载自适应时返回 -1(表示"不适用",而非 0ms)。 */
     public double currentSolveMsEwma() {
         return adaptive == null ? -1D : adaptive.ewmaSolveMs();
+    }
+
+    /** 客户端算力 EWMA(次/毫秒):未挂载自适应时返回 -1。回答"难度该不该动",与耗时互补。 */
+    public double currentHashesPerMs() {
+        return adaptive == null ? -1D : adaptive.ewmaHashesPerMs();
     }
 }

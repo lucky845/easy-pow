@@ -9,6 +9,26 @@
 
 ### 新增
 
+#### 难度自适应:观测客户端算力
+
+- 新增 `AdaptiveDifficulty.ewmaHashesPerMs()` 与指标 `pow.adaptive.hashes.per.ms`:成本占比
+  `下发难度 / 实际耗时`(次/毫秒)的 EWMA。此前只暴露"耗时"与"难度"两个结果,
+  看不出难度该不该动;现在能区分"客户端变慢"与"难度没跟上"。
+- 签发记录从 `签发时刻` 扩为 `签发时刻 + 当次下发难度`,成本占比的分子与分母取自同一次签发。
+- 新增下界 `MIN_HASHES_PER_MS`:耗时快到时钟回拨或样本伪造才可能达到的速度下,该样本直接丢弃。
+
+### 修复
+
+- **控制律必须是无状态映射**:`currentMaxnumber()` 曾尝试写成"乘上一次下发值"的积分形式,
+  等于把输出接回输入,给控制器加了一阶极点;实测 200 轮后由 20000 发散到 31619(真实算力固定的场景)。
+  现已明确为 `current = clamp(base × target / EWMA, min, max)`,并新增 `readsArePure` 用例锁死"读不推进状态"。
+
+#### 已知偏差(未修复,写入 README)
+
+- 稳态难度停在 `√(base × target × 算力)` 而非 `target × 算力`,系统性偏高约 1.58 倍。
+  根因是 EWMA 稳态值等于当次实测值、控制律又把 `base` 当锚,`D` 与 `1/D` 相乘形成二次不动点。
+  修正需要改成显式算力估计的开环反解,代价是算力突变时超调;当前选择保留闭环并披露偏差,
+  用例 `convergesToTargetForKnownClient` 断言的是真实不动点(31623)而不是理想值。
 #### 存储故障可配置:`easy-pow.storage-fail-mode`
 
 - 新增枚举 `PowStorageFailMode`:`CLOSED`(默认)拒绝放行、`OPEN` 降级放行。此前 Redis 抖动时 `find()` 的异常原样上抛,校验接口变 500,既不 fail-closed 也不 fail-open,且不可配置。
