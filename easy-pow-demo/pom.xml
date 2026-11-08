@@ -38,6 +38,12 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
+
+    <!-- 演示 Redis 存储:仅 profile=redis 时连;starter 检测到 StringRedisTemplate 会自动切换到 RedisPowStorage -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
   </dependencies>
 
   <build>

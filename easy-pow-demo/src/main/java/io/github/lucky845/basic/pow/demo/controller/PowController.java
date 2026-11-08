@@ -7,8 +7,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import io.github.lucky845.basic.pow.AltchaCodec;
 import io.github.lucky845.basic.pow.PowChallengeIssuer;
 import io.github.lucky845.basic.pow.PowChallengeVerifier;
+import io.github.lucky845.basic.pow.PowProperties;
 import io.github.lucky845.basic.pow.PowResult;
 import io.github.lucky845.basic.pow.PowStatus;
+import io.github.lucky845.basic.pow.PowStorage;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -37,9 +39,22 @@ public class PowController {
     private final PowChallengeVerifier verifier;
     private final ConcurrentHashMap<String, Window> issueWindows = new ConcurrentHashMap<>();
 
-    public PowController(PowChallengeIssuer issuer, PowChallengeVerifier verifier) {
+    private final PowStorage storage;
+    private final String failMode;
+
+    public PowController(PowChallengeIssuer issuer, PowChallengeVerifier verifier,
+                         PowStorage storage, PowProperties properties) {
+        this.storage = storage;
+        this.failMode = properties.getStorageFailMode() == null ? null : properties.getStorageFailMode().name();
         this.issuer = issuer;
         this.verifier = verifier;
+    }
+
+    /** 当前存储实现与故障策略:页面据此提示「内存 / Redis」,省得用户猜自己看的是哪条链路。 */
+    @GetMapping(value = "/storage", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, String> storage() {
+        String name = storage.getClass().getSimpleName();
+        return Map.of("storage", name, "failMode", failMode == null ? "" : failMode);
     }
 
     /** 下发 altcha challenge,字段与官方协议一致。 */
