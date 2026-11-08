@@ -2,10 +2,13 @@ package io.github.lucky845.basic.pow;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 /**
  * PoW 自动配置:默认提供内存存储、签发器、校验器三个单例 Bean,
@@ -38,22 +41,62 @@ public class PowAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public PowChallengeIssuer powChallengeIssuer(PowProperties properties, PowStorage storage,
-                                                 ObjectProvider<AdaptiveDifficulty> adaptive) {
-        AdaptiveDifficulty adjuster = adaptive.getIfAvailable();
-        if (adjuster == null || !properties.getAdaptive().isEnabled()) {
-            return new PowChallengeIssuer(properties.toConfig(), storage);
+                                                 ObjectProvider<AdaptiveDifficulty> adaptive,
+                                                 ObjectProvider<PowDifficultyListener> listeners) {
+        PowConfig config = properties.toConfig();
+        AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
+        PowDifficultyListener listener = composite(adjuster, listeners);
+        if (adjuster == null) {
+            return new PowChallengeIssuer(config, storage, null, listener);
         }
-        return new PowChallengeIssuer(properties.toConfig(), storage, adjuster::currentMaxnumber, adjuster);
+        return new PowChallengeIssuer(config, storage, adjuster::currentMaxnumber, listener);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public PowChallengeVerifier powChallengeVerifier(PowProperties properties, PowStorage storage,
-                                                     ObjectProvider<AdaptiveDifficulty> adaptive) {
-        AdaptiveDifficulty adjuster = adaptive.getIfAvailable();
-        if (adjuster == null || !properties.getAdaptive().isEnabled()) {
-            return new PowChallengeVerifier(properties.toConfig(), storage);
+                                                     ObjectProvider<AdaptiveDifficulty> adaptive,
+                                                     ObjectProvider<PowDifficultyListener> listeners) {
+        PowConfig config = properties.toConfig();
+        AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
+        return new PowChallengeVerifier(config, storage, composite(adjuster, listeners));
+    }
+
+    /**
+     * Micrometer 在场时注册指标监听器(optional 依赖,不在 classpath 就跳过)。
+     *
+     * <p>{@code ConditionalOnClass} 必须放在<b>独立嵌套配置类</b>上:写在普通 {@code @Bean} 方法上时,
+     * Spring 仍需解析该方法签名里的 {@code MeterRegistry},用户没有 micrometer 时会
+     * {@code NoClassDefFoundError},而不是安静跳过。</p>
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "io.micrometer.core.instrument.MeterRegistry")
+    static class MetricsConfiguration {
+
+        @Bean
+        @ConditionalOnBean(io.micrometer.core.instrument.MeterRegistry.class)
+        PoWMetrics poWMetrics(io.micrometer.core.instrument.MeterRegistry registry,
+                              PowProperties properties,
+                              ObjectProvider<AdaptiveDifficulty> adaptive) {
+            AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
+            return new PoWMetrics(registry, properties.toConfig(), adjuster);
         }
-        return new PowChallengeVerifier(properties.toConfig(), storage, adjuster);
+    }
+
+    /**
+     * 自适应与用户自定义监听器可能同时存在,合并成一条链。
+     * 关闭自适应时仍然挂载其余监听器——观测不该因为关掉自适应而消失。
+     */
+    private static PowDifficultyListener composite(AdaptiveDifficulty adjuster,
+                                                   ObjectProvider<PowDifficultyListener> listeners) {
+        java.util.List<PowDifficultyListener> all = new java.util.ArrayList<>();
+        if (adjuster != null) {
+            all.add(adjuster);
+        }
+        listeners.orderedStream().forEach(all::add);
+        if (all.isEmpty()) {
+            return null;
+        }
+        return all.size() == 1 ? all.get(0) : new PoWListenerComposite(all);
     }
 }

@@ -27,6 +27,16 @@
     </dependency>
 
     <!--
+      Micrometer 指标同样可选:用户自带 micrometer-core 时才注册 PoWMetrics;
+      optional 保证不传递给使用者,也不引入额外运行时依赖。
+    -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-core</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!--
       Redis 支持是可选的:只有用户自己引入 spring-boot-starter-data-redis
       且容器里有 StringRedisTemplate 时,RedisPowStorage 才会被注册。
       optional 保证该依赖不会传递到用户的 classpath。

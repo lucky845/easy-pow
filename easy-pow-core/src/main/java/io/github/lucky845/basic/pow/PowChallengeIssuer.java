@@ -77,7 +77,11 @@ public final class PowChallengeIssuer {
         long expiresAt = System.currentTimeMillis() + ttlMs;
         storage.save(challenge, expiresAt, maxnumber);
         if (listener != null) {
-            listener.onIssued(challenge);
+            try {
+                listener.onIssued(challenge);
+            } catch (RuntimeException ignored) {
+                // 观测是旁路:监听器故障不得让签发失败(挑战已落存储,抛异常只会让调用方丢掉有效挑战)
+            }
         }
         return new PowChallenge(algorithm, challenge, maxnumber, salt, signature, expiresAt);
     }

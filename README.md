@@ -282,6 +282,34 @@ PowChallengeVerifier verifier = new PowChallengeVerifier(config, storage, adjust
 行为优雅降级为部分观测,不影响正确性;监控可读 `adjuster.ewmaSolveMs()`。与「难度调优」的关系:
 开启自适应后 `maxnumber` 退化为基准难度,调优的目标值由 `target-solve-ms` 承担。
 
+## 监控指标(Micrometer,可选)
+
+starter 检测到 `MeterRegistry`(即引入 `micrometer-core` 或任一带 Micrometer 的 Boot starter)时自动注册 `PoWMetrics`,
+与难度自适应**各自独立**——关闭自适应仍可观测:
+
+| 指标 | 类型 | 含义 |
+| --- | --- | --- |
+| `pow.challenge.issued` | Counter | 已签发挑战数 |
+| `pow.challenge.verified` | Counter | 校验通过数 |
+| `pow.maxnumber` | Gauge | 当前难度上限(自适应开启时随 EWMA 变化) |
+
+指标**不带 challenge 标签**:challenge 是逐请求的 hex,打标签会撑爆注册表。
+
+监听器是旁路:`PowDifficultyListener` 抛出的任何异常都会被吞掉,绝不影响签发/校验结果。想自定义观测,
+注册自己的 `PowDifficultyListener` Bean 即可,它会与自适应合并成一条链:
+
+```java
+@Bean
+PowDifficultyListener myAudit() {
+    return new PowDifficultyListener() {
+        @Override
+        public void onVerified(String challengeKey) {
+            // 审计日志 / 风控告警
+        }
+    };
+}
+```
+
 ## 难度调优(maxnumber)
 
 `maxnumber` 是浏览器求解的工作量上界:widget 需在 `[0, maxnumber]` 内暴力搜索 `sha256(salt+number)==challenge`。
