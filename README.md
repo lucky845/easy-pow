@@ -52,7 +52,7 @@ Maven 坐标(0.1.0 起已发布到 Maven Central;快照版本请 `mvn install` �
 <dependency>
   <groupId>io.github.lucky845</groupId>
   <artifactId>easy-pow-spring-boot-starter</artifactId>
-  <version>0.1.2</version>
+  <version>0.1.5</version>
 </dependency>
 ```
 
@@ -117,7 +117,7 @@ public class LoginController {
 <dependency>
   <groupId>io.github.lucky845</groupId>
   <artifactId>easy-pow-core</artifactId>
-  <version>0.1.2</version>
+  <version>0.1.5</version>
 </dependency>
 ```
 
@@ -232,10 +232,10 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.max-pending-challenges` 只�
 
 ```
 mvn -pl easy-pow-demo -am package
-java -jar easy-pow-demo/target/easy-pow-demo-0.1.4.jar
+java -jar easy-pow-demo/target/easy-pow-demo-0.1.5.jar
 
 # 切到 Redis 存储(需本机 6379 有 Redis;验证 starter 的自动装配链路)
-java -jar easy-pow-demo/target/easy-pow-demo-0.1.4.jar --spring.profiles.active=redis
+java -jar easy-pow-demo/target/easy-pow-demo-0.1.5.jar --spring.profiles.active=redis
 ```
 
 1. 浏览器打开 <http://localhost:8080/>,页面自动完成"获取挑战 → 本地解题 → 校验"全流程(altcha 组件)。
@@ -395,7 +395,7 @@ mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执
 `tools/pow-bench.mjs`(仅需 Node 18+,无第三方依赖)测**服务端承担的两段成本**,解题成本在浏览器侧,不计入:
 
 ```
-ISSUE_RATE_DISABLED=true java -jar easy-pow-demo/target/easy-pow-demo-0.1.4.jar --spring.profiles.active=redis &
+ISSUE_RATE_DISABLED=true java -jar easy-pow-demo/target/easy-pow-demo-0.1.5.jar --spring.profiles.active=redis &
 node tools/pow-bench.mjs                                    # 默认 http://localhost:8080,32 并发,20 秒
 B=http://host:8080 CONC=64 DURATION=30000 node tools/pow-bench.mjs
 ```
