@@ -38,5 +38,9 @@ class PowConfigTest {
     void rejectsBadDefaults() {
         assertThrows(IllegalArgumentException.class, () -> new PowConfig("s", 999, 1000));
         assertThrows(IllegalArgumentException.class, () -> new PowConfig("s", 1_000_000, 0));
+        // 上界 +1 会溢出成负数,与 PowChallengeIssuer 保持一致:Long.MAX_VALUE 拒绝,
+        // 而 Long.MAX_VALUE - 1 加一后仍是正数,合法
+        assertThrows(IllegalArgumentException.class, () -> new PowConfig("s", Long.MAX_VALUE, 1000));
+        assertEquals(Long.MAX_VALUE - 1, new PowConfig("s", Long.MAX_VALUE - 1, 1000).defaultMaxnumber());
     }
 }
