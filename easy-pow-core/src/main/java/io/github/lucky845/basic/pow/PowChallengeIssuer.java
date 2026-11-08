@@ -56,7 +56,7 @@ public final class PowChallengeIssuer {
      *
      * @param maxnumber 难度上限,number ∈ [0, maxnumber],需 ≥ 1000
      * @param ttlMs     有效期(毫秒),需 > 0
-     * @throws IllegalArgumentException maxnumber < 1000(或溢出)或 ttlMs <= 0
+     * @throws IllegalArgumentException maxnumber {@code <} 1000(或溢出)或 ttlMs {@code <=} 0
      */
     public PowChallenge issue(long maxnumber, long ttlMs) {
         if (maxnumber < MIN_MAXNUMBER || maxnumber == Long.MAX_VALUE) {
