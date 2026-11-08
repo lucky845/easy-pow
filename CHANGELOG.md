@@ -5,7 +5,7 @@
 发布到 Maven Central 的组件:`easy-pow-core`、`easy-pow-spring-boot-starter`(`easy-pow-demo` 不发布)。
 坐标与配置项说明见 [README](README.md)。
 
-## [Unreleased]
+## [0.1.4] - 2026-11-08
 
 ### 新增
 
