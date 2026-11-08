@@ -94,6 +94,7 @@ class AdaptiveDifficultyTest {
         InMemoryPowStorage storage = new InMemoryPowStorage();
         List<String> issued = new ArrayList<>();
         List<String> verified = new ArrayList<>();
+        List<String> rejected = new ArrayList<>();
         PowChallengeIssuer issuer = new PowChallengeIssuer(config, storage, () -> 2_000L,
                 new PowDifficultyListener() {
                     @Override
@@ -107,14 +108,21 @@ class AdaptiveDifficultyTest {
                     public void onVerified(String challengeKey) {
                         verified.add(challengeKey);
                     }
+
+                    @Override
+                    public void onRejected(String challengeKey, PowStatus status) {
+                        rejected.add(status.name());
+                    }
                 });
         PowChallenge challenge = issuer.issue();
         assertEquals(List.of(challenge.challenge()), issued);
         String payload = solutionJson(challenge, solve(challenge));
         assertEquals(PowStatus.PASSED, verifier.verify(payload).status());
         assertEquals(List.of(challenge.challenge()), verified);
-        assertEquals(PowStatus.REUSED, verifier.verify(payload).status()); // 重放不回调
+        assertEquals(PowStatus.REUSED, verifier.verify(payload).status());
+        // 重放不走 onVerified(否则通过数被污染),但必须走 onRejected —— 否则面板看不到攻击
         assertEquals(1, verified.size());
+        assertEquals(List.of("REUSED"), rejected);
     }
 
     @Test

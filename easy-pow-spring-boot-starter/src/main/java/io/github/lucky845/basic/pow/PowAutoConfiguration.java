@@ -80,9 +80,12 @@ public class PowAutoConfiguration {
         @Bean
         PoWMetrics poWMetrics(ObjectProvider<io.micrometer.core.instrument.MeterRegistry> registry,
                               PowProperties properties,
-                              ObjectProvider<AdaptiveDifficulty> adaptive) {
+                              ObjectProvider<AdaptiveDifficulty> adaptive,
+                              ObjectProvider<PowStorage> storage) {
             AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
-            return new PoWMetrics(registry.getIfAvailable(), properties.toConfig(), adjuster);
+            PowStorage current = storage.getIfAvailable();
+            FailModePowStorage failMode = current instanceof FailModePowStorage f ? f : null;
+            return new PoWMetrics(registry.getIfAvailable(), properties.toConfig(), adjuster, failMode);
         }
     }
 
