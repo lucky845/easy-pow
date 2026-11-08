@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.FilteredClassLoader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,6 +58,64 @@ class AdaptiveAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context.getBean(AdaptiveDifficulty.class).currentMaxnumber()).isEqualTo(2000);
                     assertThat(context.getBean(PowChallengeIssuer.class).issue().maxnumber()).isEqualTo(2000);
+                });
+    }
+
+    @Test
+    @DisplayName("关闭自适应时,自定义监听器仍然收到事件")
+    void listenerStillFiresWhenAdaptiveDisabled() {
+        java.util.concurrent.atomic.AtomicInteger issued = new java.util.concurrent.atomic.AtomicInteger();
+        runner.withBean(PowDifficultyListener.class, () -> new PowDifficultyListener() {
+                    @Override
+                    public void onIssued(String challengeKey) {
+                        issued.incrementAndGet();
+                    }
+                })
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(AdaptiveDifficulty.class);
+                    context.getBean(PowChallengeIssuer.class).issue();
+                    assertThat(issued.get()).isEqualTo(1);
+                });
+    }
+
+    @Test
+    @DisplayName("监听听抛异常不影响签发")
+    void listenerFailureDoesNotBreakIssuing() {
+        runner.withBean(PowDifficultyListener.class, () -> new PowDifficultyListener() {
+                    @Override
+                    public void onIssued(String challengeKey) {
+                        throw new IllegalStateException("boom");
+                    }
+                })
+                .run(context -> assertThat(context.getBean(PowChallengeIssuer.class).issue()).isNotNull());
+    }
+
+    @Test
+    @DisplayName("Micrometer 在场时注册指标 Bean")
+    void registersMetricsWhenMicrometerPresent() {
+        runner.withBean(io.micrometer.core.instrument.MeterRegistry.class,
+                        io.micrometer.core.instrument.simple.SimpleMeterRegistry::new)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(PoWMetrics.class);
+                    PoWMetrics metrics = context.getBean(PoWMetrics.class);
+                    context.getBean(PowChallengeIssuer.class).issue();
+                    assertThat(context.getBean(io.micrometer.core.instrument.MeterRegistry.class)
+                            .get(PoWMetrics.ISSUED).counter().count()).isEqualTo(1.0);
+                    assertThat(metrics.currentMaxnumber()).isEqualTo(2000.0);
+                });
+    }
+
+    @Test
+    @DisplayName("未引入 micrometer 时安静跳过,核心 Bean 正常可用")
+    void skipsMetricsGracefullyWithoutMicrometer() {
+        new ApplicationContextRunner()
+                .withPropertyValues("easy-pow.secret=test-secret")
+                .withConfiguration(AutoConfigurations.of(PowAutoConfiguration.class))
+                .withClassLoader(new FilteredClassLoader(io.micrometer.core.instrument.MeterRegistry.class))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(PoWMetrics.class);
+                    assertThat(context.getBean(PowChallengeIssuer.class).issue()).isNotNull();
                 });
     }
 }

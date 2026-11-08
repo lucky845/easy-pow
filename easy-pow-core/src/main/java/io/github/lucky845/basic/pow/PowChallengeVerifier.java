@@ -71,7 +71,11 @@ public final class PowChallengeVerifier {
             return PowResult.fail(PowStatus.REUSED, "挑战已被使用,疑似重放", solution.challenge());
         }
         if (listener != null) {
-            listener.onVerified(solution.challenge());
+            try {
+                listener.onVerified(solution.challenge());
+            } catch (RuntimeException ignored) {
+                // 观测是旁路:监听器故障不得把已通过的校验翻成失败,也不得掩盖主结果
+            }
         }
         return PowResult.pass(solution.challenge());
     }
