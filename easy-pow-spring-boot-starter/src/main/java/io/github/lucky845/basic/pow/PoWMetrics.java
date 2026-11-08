@@ -23,11 +23,13 @@ import java.util.concurrent.atomic.AtomicLong;
  *       difficulty_exceeded / reused / storage_error)</li>
  *   <li>{@code pow.storage.errors} — 存储故障次数(Counter)</li>
  *   <li>{@code pow.storage.tripped} — 存储是否熔断(Gauge,1/0);未使用故障策略存储时不暴露</li>
+ *   <li>{@code pow.storage.tripped.for.ms} — 熔断已持续毫秒数(Gauge,0 表示未熔断)</li>
+ *   <li>{@code pow.storage.size} — 内存存储驻留条目数(Gauge);主存储不是内存实现时不暴露</li>
  * </ul>
  *
  * <p>本类不采集挑战内容,{@code challengeKey} 入参不进入任何指标标签。</p>
  */
-public class PoWMetrics implements PowDifficultyListener {
+public class PoWMetrics implements PowDifficultyListener, PowStorageErrorListener {
 
     /** 签发计数。 */
     public static final String ISSUED = "pow.challenge.issued";
@@ -45,6 +47,10 @@ public class PoWMetrics implements PowDifficultyListener {
     public static final String STORAGE_ERRORS = "pow.storage.errors";
     /** 存储是否处于熔断(1/0)。 */
     public static final String STORAGE_TRIPPED = "pow.storage.tripped";
+    /** 熔断已持续的毫秒数;未熔断为 0。 */
+    public static final String STORAGE_TRIPPED_FOR_MS = "pow.storage.tripped.for.ms";
+    /** 内存存储当前驻留条目数(含待清理);非内存存储不暴露。 */
+    public static final String STORAGE_SIZE = "pow.storage.size";
 
     private final Counter issued;
     private final Counter verified;
@@ -100,6 +106,14 @@ public class PoWMetrics implements PowDifficultyListener {
         if (failModeStorage != null) {
             Gauge.builder(STORAGE_TRIPPED, failModeStorage, s -> s.isTripped() ? 1D : 0D)
                     .description("存储是否处于熔断状态:1=熔断中(已降级),0=健康")
+                    .register(registry);
+            Gauge.builder(STORAGE_TRIPPED_FOR_MS, failModeStorage, FailModePowStorage::trippedForMs)
+                    .description("熔断已持续毫秒数;0=未熔断")
+                    .register(registry);
+        }
+        if (failModeStorage != null && failModeStorage.primary() instanceof InMemoryPowStorage inMemory) {
+            Gauge.builder(STORAGE_SIZE, inMemory, InMemoryPowStorage::size)
+                    .description("内存存储当前驻留条目数(含已消费、待清理)")
                     .register(registry);
         }
         Gauge.builder(MAXNUMBER, this, PoWMetrics::currentMaxnumber)
@@ -170,5 +184,20 @@ public class PoWMetrics implements PowDifficultyListener {
     /** 客户端算力 EWMA(次/毫秒):未挂载自适应时返回 -1。回答"难度该不该动",与耗时互补。 */
     public double currentHashesPerMs() {
         return adaptive == null ? -1D : adaptive.ewmaHashesPerMs();
+    }
+
+    /**
+     * 签发路径的存储故障计数。
+     *
+     * <p>校验路径的故障会以 {@link PowStatus#STORAGE_ERROR} 走 {@link #onRejected},但签发路径
+     * 根本没有校验结论可复用——签发失败时调用方直接拿到异常。不在这里补一次,
+     * {@code pow.storage.errors} 只能统计"一半"的存储故障。</p>
+     */
+    @Override
+    public void onStorageError(String operation, RuntimeException cause) {
+        if (storageErrors == null) {
+            return;
+        }
+        storageErrors.increment();
     }
 }

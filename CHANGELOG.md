@@ -5,6 +5,42 @@
 发布到 Maven Central 的组件:`easy-pow-core`、`easy-pow-spring-boot-starter`(`easy-pow-demo` 不发布)。
 坐标与配置项说明见 [README](README.md)。
 
+## [Unreleased]
+
+### 新增
+
+- **存储熔断可观测性**:新增 `pow.storage.tripped.for.ms`(熔断持续毫秒数)与 `pow.storage.size`
+  (内存存储条目数)。原来只有 0/1 的 `pow.storage.tripped`,看不出"已经降级 5 分钟没人管",
+  也看不出内存存储是否逼近 `max-pending-challenges`。
+- **`PowStorageErrorListener`**:存储故障旁路接口 `onStorageError(operation, cause)`,
+  由 `PoWChallengeIssuer` / `PowChallengeVerifier` 在 `save` / `find` / `consume` 失败时回调。
+  签发路径没有 `PowStatus` 可复用,此前这类故障在 `pow.storage.errors` 上完全不可见。
+- `FailModePowStorage` 新增 `trippedForMs()`;主存储故障时打一条 WARN(仅在状态翻转时打,不刷日志)。
+- `InMemoryPowStorage` 新增 `size()` / `maxPendingChallenges()`。
+
+### 修复
+
+- **Redis 存储实际未生效**:`RedisPowAutoConfiguration` 的 `@ConditionalOnMissingBean(PowStorage.class)`
+  写在 `@Bean` 方法上,与类级 `@AutoConfiguration(before = PowAutoConfiguration.class)` 叠加后,
+  两个自动配置互相把对方判成"已存在",最终注入的是内存存储——`/pow/storage` 显示包装器,
+  但请求走的是 `InMemoryPowStorage`。条件改为类级后 Redis 实现正常生效。
+- **`FailModePowStorage.save` 绕过故障处理**:`save` 直接调 `primary.save(...)` 而没有 try/catch,
+  Redis 故障时熔断状态永远不置位(`pow.storage.tripped` 恒为 0,日志里也没有任何告警)。
+  现在失败必经 `markTripped`,签发本身仍不降级、异常照旧抛给调用方。
+- **`fail-mode: CLOSED` 熔断后会误判成"挑战过期"**:`find` 的短路条件由 `isTripped()` 收窄为
+  `isTripped() && mode == OPEN`,CLOSED 下继续打到主存储并由校验器转成 `STORAGE_ERROR`。
+
+### 兼容性
+
+- 无破坏性变更。新增构造器与监听器接口均为追加,旧的 `PowChallengeIssuer` / `PowChallengeVerifier`
+  构造器签名保持不变。
+- `easy-pow-core` 新增 `org.slf4j:slf4j-api`(`provided`),不传递到使用方。
+
+### 测试
+
+- core 62 + starter 38 = 100 用例全绿,新增覆盖:签发/校验的存储故障上报、
+  旁路监听器自身抛异常不改变结论、`save` 失败计入熔断、`CLOSED` 不再短路。
+
 ## [0.1.5] - 2026-11-08
 
 ### 新增

@@ -313,8 +313,10 @@ starter 检测到 `MeterRegistry`(即引入 `micrometer-core` 或任一带 Micro
 | `pow.challenge.verified` | Counter | 校验通过数 |
 | `pow.maxnumber` | Gauge | 当前难度上限(自适应开启时随 EWMA 变化) |
 | `pow.verify.rejected` | Counter(tag `reason`) | **被拒绝**的校验数,按 `PowStatus` 小写名分档(`reused` / `bad_signature` / `expired` / `storage_error` / `difficulty_exceeded` 等)。被攻击时看这个,不是看通过数 |
-| `pow.storage.errors` | Counter | 存储层故障数(仅 `storage_error`)。与 `rejected{reason="expired"}` 分开:前者是基础设施,后者是业务 |
+| `pow.storage.errors` | Counter | 存储层故障数,**签发与校验两类都计**(签发失败没有 `PowStatus`,由 `PowStorageErrorListener` 补报)。与 `rejected{reason="expired"}` 分开:前者是基础设施,后者是业务 |
 | `pow.storage.tripped` | Gauge | 存储熔断状态(0/1)。`storage-fail-mode: OPEN` 时持续为 1 表示正在降级放行,此时多实例无防重放 |
+| `pow.storage.tripped.for.ms` | Gauge | 熔断已持续多久(毫秒,0 = 未熔断)。0/1 只看得出"在故障",这个看得出"故障多久没人管"——告警用它定阈值 |
+| `pow.storage.size` | Gauge | 内存存储当前条目数(含已消费待清理)。主存储不是 `InMemoryPowStorage` 时不暴露(Redis 的条目数不在本进程内) |
 | `pow.adaptive.hashes.per.ms` | Gauge | 客户端算力 EWMA(次/毫秒),未挂载自适应时为 `-1`。与 `pow.solve.ms.ewma` 一起看:前者决定难度该不该动,后者说明实际慢了还是快了 |
 
 拒绝也要计入:`PowDifficultyListener.onRejected(challengeKey, status)` 在每个拒绝分支回调,默认实现转调 `onVerified`
@@ -323,7 +325,19 @@ starter 检测到 `MeterRegistry`(即引入 `micrometer-core` 或任一带 Micro
 > 排障提示:校验接口大量 5xx 或面板只有通过数没有拒绝数,先查 `pow.verify.rejected` / `pow.storage.errors`。
 > 存储故障被明确标成 `storage_error` 而非 `expired`,避免把 Redis 抖动误诊成"客户端总是超时"。
 
-监听器是旁路:`PowDifficultyListener` 抛出的任何异常都会被吞掉,绝不影响签发/校验结果。想自定义观测,
+签发路径没有"校验结论"可复用——存储写失败时调用方直接拿到异常,不会产生 `PowStatus`。
+想让这类故障也进 `pow.storage.errors`,注册 `PowStorageErrorListener` Bean 即可
+(`onStorageError(operation, cause)`,operation 为 `issue` / `find` / `consume`):
+
+```java
+@Bean
+PowStorageErrorListener storageAlert() {
+    return (operation, cause) -> log.error("PoW 存储故障:{}", operation, cause);
+}
+```
+
+监听器是旁路:`PowDifficultyListener` / `PowStorageErrorListener` 抛出的任何异常都会被吞掉,
+绝不影响签发/校验结果。想自定义观测,
 注册自己的 `PowDifficultyListener` Bean 即可,它会与自适应合并成一条链:
 
 ```java
@@ -385,7 +399,7 @@ if (!bucket.tryConsume(1)) {
 ## 构建
 
 ```
-mvn -B verify                     # 跑测试(core 57 + starter 34 = 91 用例,其中 5 例是真机 Redis 冒烟)
+mvn -B verify                     # 跑测试(core 62 + starter 38 = 100 用例,其中 5 例是真机 Redis 冒烟)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```
