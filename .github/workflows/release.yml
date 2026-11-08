@@ -1,4 +1,5 @@
-# Maven Central 发布链:推 tag(如 v0.1.0)即自动签名、打包 sources/javadoc、上传 Central Portal。
+# 发布链:推 tag(如 v0.1.6)即自动 1) 签名、打包 sources/javadoc、上传 Central Portal,2) 建 GitHub Release。
+# 两步缺一不可:Central 上的制品才是"发了版",GitHub Releases 页面才是人看得见的版本记录。
 # 前置一次性配置见 README「发布 Maven Central」:Central Portal 命名空间验证 + User Token + GPG 密钥 + 仓库 Secrets。
 name: Release to Maven Central
 
@@ -8,7 +9,8 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  # 建 Release 需要写权限;上传 Central 走 secrets 里的 token,与本权限无关
+  contents: write
 
 jobs:
   publish:
@@ -45,3 +47,22 @@ jobs:
           # maven-gpg-plugin 3.2+ 支持从该环境变量读取口令
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn -B -Prelease deploy
+
+      # 从 CHANGELOG 抽出本版小节作为 Release 正文;找不到时退化为自动生成,
+      # 不让"没写 CHANGELOG"把已发布的制品挡在 Release 页面之外。
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES="$(mktemp)"
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > "$NOTES"
+          if [ -s "$NOTES" ]; then
+            gh release create "$GITHUB_REF_NAME" --title "easy-pow $VERSION" --notes-file "$NOTES" --latest
+          else
+            gh release create "$GITHUB_REF_NAME" --title "easy-pow $VERSION" --generate-notes --latest
+          fi
