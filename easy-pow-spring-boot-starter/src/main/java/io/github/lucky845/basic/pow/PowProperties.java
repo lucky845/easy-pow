@@ -12,6 +12,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   ttl-ms: 120000      # 有效期(毫秒),默认 120000
  *   algorithm: SHA-256  # PoW 算法,可选 SHA-256 / SHA-384 / SHA-512,默认 SHA-256
  *   max-pending-challenges: 0  # 可选,内存存储待处理挑战上限;0=不限,超限拒绝签发(转 HTTP 429)
+ *   storage-fail-mode: CLOSED  # 存储故障策略:CLOSED=拒绝放行(默认),OPEN=降级放行
+ *   storage-cooldown-ms: 30000 # 熔断冷却时长(毫秒)
+ *   fallback-storage:         # 可选,fail-mode=OPEN 时的降级存储 Bean 名称
  * </pre>
  */
 @ConfigurationProperties(prefix = PowProperties.PREFIX)
@@ -36,6 +39,15 @@ public class PowProperties {
 
     /** 难度自适应(默认关闭):按"签发 → 校验通过"实际耗时动态调整难度上限。 */
     private final Adaptive adaptive = new Adaptive();
+
+    /** 存储故障策略(默认严格):CLOSED 拒绝放行,OPEN 降级放行。 */
+    private PowStorageFailMode storageFailMode = PowStorageFailMode.CLOSED;
+
+    /** 熔断冷却时长(毫秒):故障后该时段内不再尝试主存储,避免每个请求都等一次超时。 */
+    private long storageCooldownMs = FailModePowStorage.DEFAULT_COOLDOWN_MS;
+
+    /** fail-mode=OPEN 时使用的降级存储 Bean 名称;缺省且无唯一候选时退化为内存存储。 */
+    private String fallbackStorage;
 
     /** 转为核心 {@link PowConfig};secret 缺失或空白时快速失败,阻止应用启动。 */
     public PowConfig toConfig() {
@@ -83,6 +95,30 @@ public class PowProperties {
 
     public void setMaxPendingChallenges(int maxPendingChallenges) {
         this.maxPendingChallenges = maxPendingChallenges;
+    }
+
+    public PowStorageFailMode getStorageFailMode() {
+        return storageFailMode;
+    }
+
+    public void setStorageFailMode(PowStorageFailMode storageFailMode) {
+        this.storageFailMode = storageFailMode;
+    }
+
+    public long getStorageCooldownMs() {
+        return storageCooldownMs;
+    }
+
+    public void setStorageCooldownMs(long storageCooldownMs) {
+        this.storageCooldownMs = storageCooldownMs;
+    }
+
+    public String getFallbackStorage() {
+        return fallbackStorage;
+    }
+
+    public void setFallbackStorage(String fallbackStorage) {
+        this.fallbackStorage = fallbackStorage;
     }
 
     public Adaptive getAdaptive() {

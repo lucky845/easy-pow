@@ -39,13 +39,14 @@ class PowStorageAutoConfigurationTest {
     }
 
     @Test
-    @DisplayName("存在 StringRedisTemplate 时自动切换到 Redis 存储")
+    @DisplayName("存在 StringRedisTemplate 时自动切换到 Redis 存储(外套故障策略装饰器)")
     void switchesToRedisWhenTemplatePresent() {
         runner.withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
                 .run(context -> {
                     assertThat(context).hasSingleBean(PowStorage.class);
                     assertThat(context.getBean(PowStorage.class))
-                            .isInstanceOf(RedisPowStorage.class);
+                            .isInstanceOf(FailModePowStorage.class);
+                    assertThat(context).hasSingleBean(FailModePowStorage.class);
                 });
     }
 

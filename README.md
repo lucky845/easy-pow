@@ -152,6 +152,9 @@ if (result.status() == PowStatus.PASSED) {
 | `ttl-ms` | long | `120000` | 挑战有效期(毫秒) |
 | `algorithm` | String | `SHA-256` | PoW 算法,可选 `SHA-256` / `SHA-384` / `SHA-512`;与 altcha 前端支持的清单一致(altcha@2 dist 实证),SHA3 系列前端不支持故不提供。切换算法会使在途挑战立即失效(校验按当前配置复算),建议在低峰切换 |
 | `max-pending-challenges` | int | `0` | 内存存储待处理挑战上限;0=不限,超限抛 `IllegalStateException`,控制器应转成 HTTP 429。仅作用于自动配置的 `InMemoryPowStorage`,Redis/自定义 Bean 不适用 |
+| `storage-fail-mode` | enum | `CLOSED` | 存储(Redis)故障时的取舍:`CLOSED` 拒绝放行(校验返回 `STORAGE_ERROR`,不误报成过期);`OPEN` 降级到兜底存储放行,代价是故障期内**多实例部署失去防重放**,仅在可用性优先时使用 |
+| `storage-cooldown-ms` | long | `30000` | 熔断冷却:故障后多久重新探活,期间 `OPEN` 模式直接走兜底存储、不再打 Redis |
+| `fallback-storage` | String | 无 | `OPEN` 模式下的兜底存储 Bean 名称;缺省取容器内第一个非 Redis/非装饰器的 `PowStorage`,都没有则退化为进程内 `InMemoryPowStorage` |
 | `adaptive.enabled` | boolean | `false` | 难度自适应开关;关闭时难度恒为 `maxnumber` |
 | `adaptive.target-solve-ms` | long | `500` | 目标解题耗时(毫秒) |
 | `adaptive.min-maxnumber` | int | `1000` | 自适应难度下限(≥ 1000) |
@@ -292,8 +295,15 @@ starter 检测到 `MeterRegistry`(即引入 `micrometer-core` 或任一带 Micro
 | `pow.challenge.issued` | Counter | 已签发挑战数 |
 | `pow.challenge.verified` | Counter | 校验通过数 |
 | `pow.maxnumber` | Gauge | 当前难度上限(自适应开启时随 EWMA 变化) |
+| `pow.verify.rejected` | Counter(tag `reason`) | **被拒绝**的校验数,按 `PowStatus` 小写名分档(`reused` / `bad_signature` / `expired` / `storage_error` / `difficulty_exceeded` 等)。被攻击时看这个,不是看通过数 |
+| `pow.storage.errors` | Counter | 存储层故障数(仅 `storage_error`)。与 `rejected{reason="expired"}` 分开:前者是基础设施,后者是业务 |
+| `pow.storage.tripped` | Gauge | 存储熔断状态(0/1)。`storage-fail-mode: OPEN` 时持续为 1 表示正在降级放行,此时多实例无防重放 |
 
-指标**不带 challenge 标签**:challenge 是逐请求的 hex,打标签会撑爆注册表。
+拒绝也要计入:`PowDifficultyListener.onRejected(challengeKey, status)` 在每个拒绝分支回调,默认实现转调 `onVerified`
+以保持旧行为,`PoWMetrics` 覆盖它把拒绝记到 `pow.verify.rejected`——**不覆盖就等于把攻击记成通过**。
+
+> 排障提示:校验接口大量 5xx 或面板只有通过数没有拒绝数,先查 `pow.verify.rejected` / `pow.storage.errors`。
+> 存储故障被明确标成 `storage_error` 而非 `expired`,避免把 Redis 抖动误诊成"客户端总是超时"。
 
 监听器是旁路:`PowDifficultyListener` 抛出的任何异常都会被吞掉,绝不影响签发/校验结果。想自定义观测,
 注册自己的 `PowDifficultyListener` Bean 即可,它会与自适应合并成一条链:
@@ -357,7 +367,7 @@ if (!bucket.tryConsume(1)) {
 ## 构建
 
 ```
-mvn -B verify                     # 跑测试(core 44 + starter 29 = 73 用例,其中 5 例是真机 Redis 冒烟)
+mvn -B verify                     # 跑测试(core 53 + starter 33 = 86 用例,其中 5 例是真机 Redis 冒烟)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```

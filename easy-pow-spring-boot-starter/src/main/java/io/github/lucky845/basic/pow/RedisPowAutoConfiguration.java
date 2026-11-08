@@ -3,6 +3,7 @@ package io.github.lucky845.basic.pow;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -36,10 +37,53 @@ public class RedisPowAutoConfiguration {
 
     /**
      * 检测到 Redis 时,用 Redis 保存挑战记录,替换默认的内存实现。
+     *
+     * <p>外面套一层 {@link FailModePowStorage}:Redis 是网络依赖,一次抖动不该让校验接口
+     * 既不 fail-closed 也不 fail-open,而是抛 500。故障时怎么取舍交给 {@code easy-pow.storage-fail-mode}。</p>
      */
     @Bean
     @ConditionalOnMissingBean(PowStorage.class)
-    public PowStorage powStorage(StringRedisTemplate redisTemplate) {
-        return new RedisPowStorage(redisTemplate);
+    public PowStorage powStorage(StringRedisTemplate redisTemplate,
+                                 PowProperties properties,
+                                 ObjectProvider<PowStorage> storageProvider) {
+        RedisPowStorage redis = new RedisPowStorage(redisTemplate);
+        PowStorageFailMode mode = properties.getStorageFailMode();
+        PowStorage fallback = null;
+        if (mode == PowStorageFailMode.OPEN) {
+            fallback = resolveFallback(properties, storageProvider);
+        }
+        return new FailModePowStorage(redis, fallback, mode, properties.getStorageCooldownMs());
+    }
+
+    /**
+     * 解析降级存储:优先按 {@code fallback-storage} 指定的 Bean 名称取,
+     * 否则取容器里除 Redis/装饰器之外的任意一个;都没有则退化为进程内存储。
+     *
+     * <p>进程内降级只在单实例下有防重放能力,多实例会退化为"无防重放",
+     * 这是 {@code fail-mode: OPEN} 的既定代价,已在 {@link PowStorageFailMode#OPEN} 写明。</p>
+     */
+    private static PowStorage resolveFallback(PowProperties properties, ObjectProvider<PowStorage> storageProvider) {
+        String name = properties.getFallbackStorage();
+        if (name != null && !name.isBlank()) {
+            PowStorage named = storageProvider.orderedStream()
+                    .filter(s -> !(s instanceof FailModePowStorage) && !(s instanceof RedisPowStorage))
+                    .filter(s -> name.equals(resolveBeanName(s)))
+                    .findFirst()
+                    .orElse(null);
+            if (named != null) {
+                return named;
+            }
+        }
+        return storageProvider.orderedStream()
+                .filter(s -> !(s instanceof FailModePowStorage) && !(s instanceof RedisPowStorage))
+                .findFirst()
+                .orElseGet(() -> new InMemoryPowStorage(properties.getMaxPendingChallenges()));
+    }
+
+    /**
+     * 尽力取 Bean 名称;拿不到(如普通对象)时返回其类名,使按名称匹配在非容器场景下也能工作。
+     */
+    private static String resolveBeanName(PowStorage storage) {
+        return storage.getClass().getSimpleName();
     }
 }

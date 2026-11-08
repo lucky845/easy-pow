@@ -9,16 +9,35 @@
 
 ### 新增
 
+#### 存储故障可配置:`easy-pow.storage-fail-mode`
+
+- 新增枚举 `PowStorageFailMode`:`CLOSED`(默认)拒绝放行、`OPEN` 降级放行。此前 Redis 抖动时 `find()` 的异常原样上抛,校验接口变 500,既不 fail-closed 也不 fail-open,且不可配置。
+- 新增 `FailModePowStorage` 装饰器:自动配置的 Redis 存储被它包一层。故障时 `CLOSED` 重抛、由校验器转成 `STORAGE_ERROR`;`OPEN` 熔断 `storage-cooldown-ms`(默认 30s)并走兜底存储(可用 `fallback-storage` 指定 Bean,缺省退化到进程内)。`save()` **不降级**——签发失败让调用方拿到异常,比静默写进一个即将消失的存储更好。
+- 新增配置项 `storage-fail-mode` / `storage-cooldown-ms` / `fallback-storage`。
+
+#### 拒绝可观测
+
+- `PowStatus` 新增 `STORAGE_ERROR`:存储故障必须与 `EXPIRED` 分开。若把故障吞成 null,面板会显示"大量挑战过期",比 500 更难查。
+- `PowDifficultyListener` 新增 `default void onRejected(String challengeKey, PowStatus status)`,默认转调 `onVerified` 以保持既有实现行为。
+- 新增指标 `pow.verify.rejected{reason}`(按 `PowStatus` 小写名分档)、`pow.storage.errors`、`pow.storage.tripped`(熔断状态)。
 - 指标 `pow.solve.ms.ewma`(Gauge):解题耗时 EWMA 毫秒。只暴露 `pow.maxnumber`(结果)无法判断自适应控制器是否在有效工作,现在原因与结果一并可见;未挂载自适应时为 `-1`(表示"不适用",不是 0ms)。
 
 ### 修复
 
-- **`pow.challenge.issued` / `verified` / `maxnumber` 在真实应用里从未注册**:`PowAutoConfiguration.MetricsConfiguration#poWMetrics` 用 `@ConditionalOnBean(MeterRegistry)` 做配置期条件,而 `MeterRegistry` 由 `MetricsAutoConfiguration` / `SimpleMetricsExportAutoConfiguration` 稍后提供,条件求值时容器里还没有该 Bean 定义,于是指标静默缺失。单元测试因为显式传入 `SimpleMeterRegistry` 才通过,掩盖了缺陷。现在改为 `ObjectProvider<MeterRegistry>` 延迟取值,并加 `@AutoConfigureAfter(MetricsAutoConfiguration)` 保证求值顺序。
+- **被攻击时指标一片绿**:校验器五个拒绝分支都直接 `return PowResult.fail(...)`,而监听器只在 PASSED 回调,于是攻防演练里看到的永远是"通过 0"。现在所有失败收敛到私有 `fail(status, reason, challengeKey)` 统一出口,先回调 `onRejected` 再返回;监听器自身异常仍被吞掉,不影响主结果。
+- `PoWMetrics` 必须覆盖 `onRejected`:父接口的默认实现会把每次拒绝记成一次通过——那个默认值是为了兼容,不是为了正确。
+- **`pow.challenge.issued` / `verified` / `maxnumber` 在真实应用里从未注册**:详见下方同名条目(先于本轮完成)。
 - `PoWMetrics` 在 `registry` 为 null 时不再 NPE,退化为空实现(启动不因观测缺失而失败)。
+
+### 兼容性
+
+- 默认 `storage-fail-mode: CLOSED` 下,Redis 故障的 HTTP 表现由 500 变为一次正常的 `PowResult.fail(STORAGE_ERROR)`(HTTP 层通常 400/422,由控制器决定),拒绝原因字符串以"存储查询失败"/"存储消费失败"开头。依赖原先异常类型的调用方需要调整。
+- 自动配置的 `PowStorage` Bean 现在实际类型是 `FailModePowStorage`(装饰器)。按类型注入不受影响,按具体类型 `instanceof RedisPowStorage` 或强制转型的代码需要调整。
+- 自定义 `PowStorage` Bean 不会被包装,行为不变。
 
 ### 测试
 
-- 新增 2 例:无自适应时 EWMA `-1`;自适应开启后 EWMA 指标反映实际观测值。
+- 新增 12 例:FailModePowStorage 6 例(CLOSED 上抛且不熔断 / OPEN 无兜底 / 熔断期内不打 Redis / 兜底防重放 / 恢复解除 / save 不降级)、VerifierStorageError 3 例(find 与 tryConsume 故障都记 `STORAGE_ERROR` 且不计通过 / 每个拒绝分支都回调)、指标拒绝 3 例。合计 core 53 + starter 33 = 86。
 
 ## [0.1.3] - 2026-11-08
 
