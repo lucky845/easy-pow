@@ -282,8 +282,19 @@ PowChallengeVerifier verifier = new PowChallengeVerifier(config, storage, adjust
 ```
 
 多实例部署:签发时刻记录在本 JVM 内存(有界懒清理),"签发与校验落在不同节点"的样本不参与观测,
-行为优雅降级为部分观测,不影响正确性;监控可读 `adjuster.ewmaSolveMs()`。与「难度调优」的关系:
+行为优雅降级为部分观测,不影响正确性;监控可读 `adjuster.ewmaSolveMs()`(耗时)与
+`adjuster.ewmaHashesPerMs()`(客户端实际算力,次/毫秒)。与「难度调优」的关系:
 开启自适应后 `maxnumber` 退化为基准难度,调优的目标值由 `target-solve-ms` 承担。
+
+**控制律是闭环的,读一次不推进状态**:`currentMaxnumber()` 只是 `base × target / EWMA` 的无状态映射,
+连续读 100 次结果不变。曾把它改成"乘上一次下发值",等于把输出接回输入,给控制器加了一阶极点,
+样本一有噪声就按 `(1/ALPHA)^n` 发散(实测 200 轮由 20000 漂到 31619),已废弃。
+
+**已知偏差(务必读)**:稳态难度停在 `√(base × target × 客户端算力)`,而不是"恰好 target"所需的
+`target × 客户端算力`。以 base=50000、target=500ms、客户端 40 次/毫秒为例,实际停在 31623 而非 20000,
+即难度系统性偏高约 1.58 倍(真实耗时约 0.79×target)。根因是 EWMA 稳态值等于当次实测值 `D/h`,
+而控制律把 `base` 当锚,`D` 与 `1/D` 相乘形成二次不动点。**把 `target-solve-ms` 想成量级而不是精确值**;
+需要精确锁定耗时时请关掉自适应,改用静态 `maxnumber`(按目标设备实测标定)。
 
 ## 监控指标(Micrometer,可选)
 
@@ -298,6 +309,7 @@ starter 检测到 `MeterRegistry`(即引入 `micrometer-core` 或任一带 Micro
 | `pow.verify.rejected` | Counter(tag `reason`) | **被拒绝**的校验数,按 `PowStatus` 小写名分档(`reused` / `bad_signature` / `expired` / `storage_error` / `difficulty_exceeded` 等)。被攻击时看这个,不是看通过数 |
 | `pow.storage.errors` | Counter | 存储层故障数(仅 `storage_error`)。与 `rejected{reason="expired"}` 分开:前者是基础设施,后者是业务 |
 | `pow.storage.tripped` | Gauge | 存储熔断状态(0/1)。`storage-fail-mode: OPEN` 时持续为 1 表示正在降级放行,此时多实例无防重放 |
+| `pow.adaptive.hashes.per.ms` | Gauge | 客户端算力 EWMA(次/毫秒),未挂载自适应时为 `-1`。与 `pow.solve.ms.ewma` 一起看:前者决定难度该不该动,后者说明实际慢了还是快了 |
 
 拒绝也要计入:`PowDifficultyListener.onRejected(challengeKey, status)` 在每个拒绝分支回调,默认实现转调 `onVerified`
 以保持旧行为,`PoWMetrics` 覆盖它把拒绝记到 `pow.verify.rejected`——**不覆盖就等于把攻击记成通过**。
@@ -367,7 +379,7 @@ if (!bucket.tryConsume(1)) {
 ## 构建
 
 ```
-mvn -B verify                     # 跑测试(core 53 + starter 33 = 86 用例,其中 5 例是真机 Redis 冒烟)
+mvn -B verify                     # 跑测试(core 55 + starter 34 = 89 用例,其中 5 例是真机 Redis 冒烟)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```

@@ -123,6 +123,23 @@ class AdaptiveAutoConfigurationTest {
                     assertThat(metrics.currentSolveMsEwma()).isEqualTo(320D);
                     assertThat(context.getBean(io.micrometer.core.instrument.MeterRegistry.class)
                             .get(PoWMetrics.SOLVE_MS_EWMA).gauge().value()).isEqualTo(320D);
+                    // 算力指标必须与耗时一起暴露:只有耗时无法判断难度该不该动
+                    assertThat(context.getBean(io.micrometer.core.instrument.MeterRegistry.class)
+                            .get(PoWMetrics.HASHES_PER_MS).gauge().value())
+                            .isEqualTo(adaptive.ewmaHashesPerMs());
+                    assertThat(adaptive.ewmaHashesPerMs()).isGreaterThan(0D);
+                });
+    }
+
+    @Test
+    @DisplayName("未开自适应时算力指标同样用 -1 表示不适用")
+    void hashesPerMsIsNotApplicableWithoutAdaptive() {
+        runner.withBean(io.micrometer.core.instrument.MeterRegistry.class,
+                        io.micrometer.core.instrument.simple.SimpleMeterRegistry::new)
+                .run(context -> {
+                    assertThat(context.getBean(PoWMetrics.class).currentHashesPerMs()).isEqualTo(-1D);
+                    assertThat(context.getBean(io.micrometer.core.instrument.MeterRegistry.class)
+                            .get(PoWMetrics.HASHES_PER_MS).gauge().value()).isEqualTo(-1D);
                 });
     }
 
