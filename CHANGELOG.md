@@ -5,7 +5,7 @@
 发布到 Maven Central 的组件:`easy-pow-core`、`easy-pow-spring-boot-starter`(`easy-pow-demo` 不发布)。
 坐标与配置项说明见 [README](README.md)。
 
-## [Unreleased]
+## [0.1.3] - 2026-11-08
 
 ### 新增
 
@@ -31,6 +31,10 @@
 ### 工程
 
 - `easy-pow-spring-boot-starter` 的 surefire 增加 `-javaagent:mockito-core`,消除 Mockito inline mock maker 的自附加告警(JDK 未来版本会禁止自附加)。只在引入 Mockito 的模块启用——core 无该依赖,全局启用会让 fork JVM 找不到 agent jar 直接崩溃。
+
+### 兼容性
+
+- 行为变更(向下兼容):监听器抛出的异常不再传播。此前依赖该异常做流程控制的调用方需自行处理——但该行为本就与"观测旁路"的设计意图相反。
 
 ## [0.1.2] - 2026-11-07
 
