@@ -15,6 +15,8 @@ class PowChallengeIssuerTest {
     void rejectsMaxnumberBelow1000() {
         assertThrows(IllegalArgumentException.class, () -> issuer.issue(999, 60_000));
         assertThrows(IllegalArgumentException.class, () -> issuer.issue(0, 60_000));
+        // 上界 Long.MAX_VALUE 在 maxnumber+1 时溢出,必须同样拒绝而不是签发负难度挑战
+        assertThrows(IllegalArgumentException.class, () -> issuer.issue(Long.MAX_VALUE, 60_000));
     }
 
     @Test
@@ -35,5 +37,12 @@ class PowChallengeIssuerTest {
         assertEquals("SHA-512", challenge.algorithm());
         assertEquals(128, challenge.challenge().length());
         assertEquals(Hashes.hmacHex("SHA-512", sha512.secret(), challenge.challenge()), challenge.signature());
+    }
+
+    @Test
+    void rejectsIssueWhenStorageLimitReached() {
+        PowChallengeIssuer limited = new PowChallengeIssuer(config, new InMemoryPowStorage(1));
+        limited.issue(5000, 60_000);
+        assertThrows(IllegalStateException.class, () -> limited.issue(5000, 60_000));
     }
 }

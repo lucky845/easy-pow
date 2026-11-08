@@ -10,6 +10,7 @@ easy-pow:
   secret: demo-secret-please-change   # 必填;生产环境改为强随机值,严禁下发到前端
   maxnumber: 50000                    # 难度上限(浏览器 JS 解题 ≈0.5s;调大会线性拉长前端求解,1e6 ≈ 5-15s 明显卡顿)
   ttl-ms: 120000                      # 有效期(毫秒)
+  max-pending-challenges: 10000      # 可选:内存存储待处理挑战上限,0=不限;超限拒绝签发(演示值)
   # 难度自适应(可选):按"签发 → 校验通过"实际耗时动态调整难度上限,锁定浏览器解题 ≈500ms
   # adaptive:
   #   enabled: true

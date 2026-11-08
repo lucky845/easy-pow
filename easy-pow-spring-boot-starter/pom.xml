@@ -55,4 +55,18 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- 只有本模块用 Mockito。inline mock maker 必须走 javaagent(JDK 未来版本禁止自附加);
+               agent 路径依赖 mockito-core 已被解析到本地仓库,所以只能在有该依赖的模块启用。 -->
+          <argLine>-Djava.awt.headless=true -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

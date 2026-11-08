@@ -57,9 +57,11 @@ public final class PowChallengeIssuer {
      * @param maxnumber 难度上限,number ∈ [0, maxnumber],需 ≥ 1000
      * @param ttlMs     有效期(毫秒),需 > 0
      * @throws IllegalArgumentException maxnumber {@code <} 1000(或溢出)或 ttlMs {@code <=} 0
+     * @throws IllegalStateException    存储达到容量上限时拒绝签发,调用方应转成 HTTP 429
      */
     public PowChallenge issue(long maxnumber, long ttlMs) {
-        if (maxnumber < MIN_MAXNUMBER || maxnumber == Long.MAX_VALUE) {
+        // 上界 +1 供 randomUpTo 生成闭区间;Long.MAX_VALUE 会溢出成负数,一并拒绝
+        if (maxnumber < MIN_MAXNUMBER || maxnumber >= Long.MAX_VALUE) {
             throw new IllegalArgumentException("maxnumber 非法(需 >= " + MIN_MAXNUMBER + "): " + maxnumber);
         }
         if (ttlMs <= 0) {

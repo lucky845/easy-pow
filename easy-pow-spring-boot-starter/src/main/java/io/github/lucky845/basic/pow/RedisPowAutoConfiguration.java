@@ -13,7 +13,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * <p>只有当调用方自己引入了 {@code spring-boot-starter-data-redis}、容器里也确实存在
  * {@link StringRedisTemplate} 时才会生效。这个类是独立的自动配置,并且用
  * {@code before = PowAutoConfiguration.class} 声明必须先于内存存储求值——
- * 否则 {@link PowAutoConfiguration#powStorage()} 上的
+ * 否则 {@link PowAutoConfiguration#powStorage(PowProperties)} 上的
  * {@code @ConditionalOnMissingBean} 会先看到内存实现,把 Redis 实现挤掉。
  *
  * <p>装配优先级(与 easy-captcha 同款模式):

@@ -21,8 +21,8 @@ public class PowAutoConfiguration {
     /** 默认使用内存存储;接入 Redis 时提供自己的 {@link PowStorage} 实现即可覆盖。 */
     @Bean
     @ConditionalOnMissingBean(PowStorage.class)
-    public PowStorage powStorage() {
-        return new InMemoryPowStorage();
+    public PowStorage powStorage(PowProperties properties) {
+        return new InMemoryPowStorage(properties.getMaxPendingChallenges());
     }
 
     /** 难度自适应控制器;easy-pow.adaptive.enabled=true 时创建,可用自定义 Bean 覆盖。 */
