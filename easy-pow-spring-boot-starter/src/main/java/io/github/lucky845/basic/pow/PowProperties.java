@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   maxnumber: 1000000  # 难度上限,默认 1000000
  *   ttl-ms: 120000      # 有效期(毫秒),默认 120000
  *   algorithm: SHA-256  # PoW 算法,可选 SHA-256 / SHA-384 / SHA-512,默认 SHA-256
+ *   max-pending-challenges: 0  # 可选,内存存储待处理挑战上限;0=不限,超限拒绝签发(转 HTTP 429)
  * </pre>
  */
 @ConfigurationProperties(prefix = PowProperties.PREFIX)
@@ -29,6 +30,9 @@ public class PowProperties {
 
     /** PoW 算法名,须在 {@link Hashes#SUPPORTED} 内;与 altcha 前端支持的清单一致。 */
     private String algorithm = PowConfig.DEFAULT_ALGORITHM;
+
+    /** 内存存储待处理挑战上限;0 = 不限,负数非法。仅作用于自动配置的 InMemoryPowStorage。 */
+    private int maxPendingChallenges = 0;
 
     /** 难度自适应(默认关闭):按"签发 → 校验通过"实际耗时动态调整难度上限。 */
     private final Adaptive adaptive = new Adaptive();
@@ -71,6 +75,14 @@ public class PowProperties {
 
     public void setAlgorithm(String algorithm) {
         this.algorithm = algorithm;
+    }
+
+    public int getMaxPendingChallenges() {
+        return maxPendingChallenges;
+    }
+
+    public void setMaxPendingChallenges(int maxPendingChallenges) {
+        this.maxPendingChallenges = maxPendingChallenges;
     }
 
     public Adaptive getAdaptive() {

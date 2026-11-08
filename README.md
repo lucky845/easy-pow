@@ -64,6 +64,7 @@ easy-pow:
   maxnumber: 1000000                         # 难度上限,默认 1000000
   ttl-ms: 120000                             # 有效期(毫秒),默认 120000
   algorithm: SHA-256                         # PoW 算法:SHA-256 / SHA-384 / SHA-512,默认 SHA-256
+  max-pending-challenges: 0                 # 可选:内存存储待处理挑战上限,0=不限,超限拒绝签发(转 429)
   # 难度自适应(可选,默认关闭):详见「难度自适应」
   # adaptive:
   #   enabled: true                           # 开启后 maxnumber 为基准难度
@@ -150,6 +151,7 @@ if (result.status() == PowStatus.PASSED) {
 | `maxnumber` | int | `1000000` | 难度上界(基准难度);浏览器场景推荐 50000,见「难度调优」 |
 | `ttl-ms` | long | `120000` | 挑战有效期(毫秒) |
 | `algorithm` | String | `SHA-256` | PoW 算法,可选 `SHA-256` / `SHA-384` / `SHA-512`;与 altcha 前端支持的清单一致(altcha@2 dist 实证),SHA3 系列前端不支持故不提供。切换算法会使在途挑战立即失效(校验按当前配置复算),建议在低峰切换 |
+| `max-pending-challenges` | int | `0` | 内存存储待处理挑战上限;0=不限,超限抛 `IllegalStateException`,控制器应转成 HTTP 429。仅作用于自动配置的 `InMemoryPowStorage`,Redis/自定义 Bean 不适用 |
 | `adaptive.enabled` | boolean | `false` | 难度自适应开关;关闭时难度恒为 `maxnumber` |
 | `adaptive.target-solve-ms` | long | `500` | 目标解题耗时(毫秒) |
 | `adaptive.min-maxnumber` | int | `1000` | 自适应难度下限(≥ 1000) |
@@ -192,7 +194,7 @@ spring:
       port: 6379
 ```
 
-Redis 连接走 Spring Boot 标准配置;`easy-pow.*` 自身无新增配置项。存储选择矩阵(条件装配,与 easy-captcha 同款模式):
+Redis 连接走 Spring Boot 标准配置;`easy-pow.max-pending-challenges` 只作用于内存兜底存储。存储选择矩阵(条件装配,与 easy-captcha 同款模式):
 
 | 场景 | 使用的存储 |
 | --- | --- |
@@ -243,7 +245,7 @@ demo 的 `easy-pow.secret` 仅为演示值,生产环境必须替换为强随机�
 
 签发与校验之间的状态(有效期、难度上限、防重放标记)保存在 `PowStorage`:
 
-- 默认 `InMemoryPowStorage`:单机内存实现,懒清理,存储量上界为"一个 TTL 窗口内的签发量 + 阈值",不会无界增长;
+- 默认 `InMemoryPowStorage`:单机内存实现,懒清理;默认存储量上界为"一个 TTL 窗口内的签发量 + 阈值"(不会无界增长),也可配 `easy-pow.max-pending-challenges` 硬上限,超限拒绝签发;
 - starter 内置 `RedisPowStorage`(多实例部署首选),见「多实例部署(Redis 存储)」;
 - 多实例/分布式部署:也可实现 `save / find / tryConsume` 三个线程安全方法(如 Redis),注册为 Spring Bean 即可整体替换 starter 默认存储。
 
@@ -300,12 +302,34 @@ altcha 组件无 WASM、逐次 `await crypto.subtle.digest`,实测速率 ≈10 �
 - 挑战有效期、难度、防重放标记全部保存在服务端存储,前端只拿得到 challenge;
 - 签名与哈希比较均为常量时间、防重放原子进行——始终经 `PowChallengeVerifier.verify(...)` 校验,不要自行复刻校验逻辑;
 - 多实例部署必须共享存储(Redis),集群做常规 NTP 对时仍更稳;
-- 首次接入需与真实 altcha 前端联调一次,确认字段编码与提交流程。
+- 首次接入需与真实 altcha 前端联调一次,确认字段编码与提交流程;
+- **签发接口必须限流**:PoW 只抬高单次校验成本,不防高频拉取 `challenge`;按客户端 IP / 会话 / 设备指纹限制 `GET /pow/challenge`,超限返回 `429 Too Many Requests`;
+- **容量兜底**:单机内存可设 `easy-pow.max-pending-challenges`(如 10000),达到待处理挑战上限时 `PowStorage.save(...)` 抛 `IllegalStateException`,控制器需捕获并转成 429;Redis 部署在 Redis 侧设 `maxmemory` 与容量告警。demo 的 `PowController.checkIssueRate` 是 JDK-only 固定窗口示例,生产改用网关或 Bucket4j + 共享存储。
+
+网关示例(Nginx):
+
+```nginx
+limit_req_zone $binary_remote_addr zone=pow_challenge:10m rate=30r/m;
+location = /pow/challenge {
+  limit_req zone=pow_challenge burst=5 nodelay;
+  proxy_pass http://app;
+}
+```
+
+Bucket4j 示例(示意;版本差异以所用 Bucket4j API 为准,分布式按 IP 共享 bucket):
+
+```java
+Bandwidth limit = Bandwidth.classic(30, Refill.intervally(30, Duration.ofMinutes(1)));
+Bucket bucket = Bucket.builder().addLimit(limit).build();
+if (!bucket.tryConsume(1)) {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
+}
+```
 
 ## 构建
 
 ```
-mvn test                          # 跑测试(core 33 + starter 24 = 57 用例,其中 5 例是真机 Redis 冒烟)
+mvn -B verify                     # 跑测试(core 42 + starter 25 = 67 用例,其中 5 例是真机 Redis 冒烟)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```
@@ -342,13 +366,14 @@ git tag v0.1.2 && git push origin v0.1.2
 - [x] 消费语义统一(内存 / Redis 一致):消费窗口内重放判为 `REUSED`,而不是 `EXPIRED`,重放可观测、可计数
 - [x] 真机 Redis 冒烟用例(`embedded-redis` 自动拉起,无需本机 Redis / Docker,CI 可跑)
 - [x] 多算法支持(`easy-pow.algorithm`):SHA-256 / SHA-384 / SHA-512,与 altcha 前端清单一致
+- [x] 耗尽攻击面文档化:网关/Bucket4j 限流建议、`easy-pow.max-pending-challenges` 容量上限与 demo 限流示例
 - [ ] SHA3 系列(需前端先支持;altcha@2 dist 无 SHA3 实现,不提供以免配置出前端解不了的挑战)
 
 ## 贡献
 
 欢迎 Issue 与 PR:
 
-1. 提交前确保 `mvn test` 全绿;
+1. 提交前确保 `mvn -B verify` 全绿;
 2. core 保持零第三方依赖,新增依赖需在 PR 中说明理由;
 3. 涉及 altcha 协议字段编码的改动,请在 PR 描述附真实前端联调结果;
 4. 提交信息遵循现有风格,一次 PR 聚焦一件事。

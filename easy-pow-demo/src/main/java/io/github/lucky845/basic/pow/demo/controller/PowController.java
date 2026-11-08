@@ -1,12 +1,16 @@
 package io.github.lucky845.basic.pow.demo.controller;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.lucky845.basic.pow.AltchaCodec;
 import io.github.lucky845.basic.pow.PowChallengeIssuer;
 import io.github.lucky845.basic.pow.PowChallengeVerifier;
 import io.github.lucky845.basic.pow.PowResult;
 import io.github.lucky845.basic.pow.PowStatus;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 演示控制器:GET /pow/challenge 下发 altcha challenge;POST /pow/verify 校验 base64(JSON) solution。
@@ -24,8 +29,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/pow")
 public class PowController {
 
+    private static final long ISSUE_WINDOW_MS = 60_000L;
+    private static final int MAX_ISSUES_PER_WINDOW = 30;
+
     private final PowChallengeIssuer issuer;
     private final PowChallengeVerifier verifier;
+    private final ConcurrentHashMap<String, Window> issueWindows = new ConcurrentHashMap<>();
 
     public PowController(PowChallengeIssuer issuer, PowChallengeVerifier verifier) {
         this.issuer = issuer;
@@ -34,7 +43,8 @@ public class PowController {
 
     /** 下发 altcha challenge,字段与官方协议一致。 */
     @GetMapping(value = "/challenge", produces = MediaType.APPLICATION_JSON_VALUE)
-    public String challenge() {
+    public String challenge(HttpServletRequest request) {
+        checkIssueRate(request.getRemoteAddr());
         return AltchaCodec.toJson(issuer.issue());
     }
 
@@ -69,6 +79,33 @@ public class PowController {
         }
         PowResult result = verifier.verify(solution);
         return new VerifyResponse(result.status() == PowStatus.PASSED, result.status().name(), result.reason(), solution);
+    }
+
+    /**
+     * ponytail: 单机 demo 用固定窗口 per-IP 限流,仅演示"签发接口必须限流";不清理历史 IP、代理/NAT 下不准确。
+     * 生产请上网关限流或 Bucket4j + 共享存储,并保留 easy-pow.max-pending-challenges 作为最后一道容量保护。
+     */
+    private void checkIssueRate(String clientIp) {
+        long now = System.currentTimeMillis();
+        if (issueWindows.size() > 4096) {
+            issueWindows.entrySet().removeIf(e -> now - e.getValue().startMs >= ISSUE_WINDOW_MS);
+        }
+        Window window = issueWindows.compute(clientIp, (key, old) ->
+                old == null || now - old.startMs >= ISSUE_WINDOW_MS ? new Window(now) : old);
+        int count = window.count.updateAndGet(c -> Math.min(c + 1, MAX_ISSUES_PER_WINDOW + 1));
+        if (count > MAX_ISSUES_PER_WINDOW) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "challenge 签发过于频繁,请稍后重试");
+        }
+    }
+
+    private static final class Window {
+        private final long startMs;
+        private final AtomicInteger count = new AtomicInteger();
+
+        private Window(long startMs) {
+            this.startMs = startMs;
+        }
     }
 
     /**

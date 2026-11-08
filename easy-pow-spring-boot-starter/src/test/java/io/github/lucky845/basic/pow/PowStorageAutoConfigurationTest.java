@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -57,6 +58,19 @@ class PowStorageAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(PowStorage.class);
                     assertThat(context.getBean(PowStorage.class)).isSameAs(custom);
+                });
+    }
+
+    @Test
+    @DisplayName("max-pending-challenges 传入内存存储,超限拒绝签发")
+    void pendingLimitIsPassedToMemoryStorage() {
+        runner.withPropertyValues("easy-pow.max-pending-challenges=1")
+                .run(context -> {
+                    PowStorage storage = context.getBean(PowStorage.class);
+                    long expiresAt = System.currentTimeMillis() + 60_000;
+                    storage.save("k1", expiresAt, 1000);
+                    assertThrows(IllegalStateException.class,
+                            () -> storage.save("k2", expiresAt, 1000));
                 });
     }
 }

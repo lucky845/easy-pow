@@ -5,6 +5,16 @@
 发布到 Maven Central 的组件:`easy-pow-core`、`easy-pow-spring-boot-starter`(`easy-pow-demo` 不发布)。
 坐标与配置项说明见 [README](README.md)。
 
+## [Unreleased]
+
+### 新增
+
+- 内存存储容量保护:`easy-pow.max-pending-challenges`(默认 0=不限)限制待处理挑战数,超限抛 `IllegalStateException`;starter 自动配置透传,demo 增加 per-IP 固定窗口限流示例,README 安全章节补网关/Bucket4j 限流建议。
+
+### 测试
+
+- 新增 5 例:容量上限拒绝/同 key 可覆盖/过期项不占额度/签发器满拒/自动配置透传。
+
 ## [0.1.2] - 2026-11-07
 
 ### 新增

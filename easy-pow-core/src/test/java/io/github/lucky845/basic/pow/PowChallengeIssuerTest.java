@@ -36,4 +36,11 @@ class PowChallengeIssuerTest {
         assertEquals(128, challenge.challenge().length());
         assertEquals(Hashes.hmacHex("SHA-512", sha512.secret(), challenge.challenge()), challenge.signature());
     }
+
+    @Test
+    void rejectsIssueWhenStorageLimitReached() {
+        PowChallengeIssuer limited = new PowChallengeIssuer(config, new InMemoryPowStorage(1));
+        limited.issue(5000, 60_000);
+        assertThrows(IllegalStateException.class, () -> limited.issue(5000, 60_000));
+    }
 }

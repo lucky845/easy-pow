@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InMemoryPowStorageTest {
@@ -56,5 +57,35 @@ class InMemoryPowStorageTest {
         assertFalse(storage.tryConsume("k1", 60_000)); // 重复消费被拒
         storage.save("k2", System.currentTimeMillis() - 1, 1000); // 已过期
         assertFalse(storage.tryConsume("k2", 60_000));
+    }
+
+    @Test
+    void rejectsNegativePendingLimit() {
+        assertThrows(IllegalArgumentException.class, () -> new InMemoryPowStorage(-1));
+    }
+
+    @Test
+    void rejectsNewKeyWhenPendingLimitReached() {
+        InMemoryPowStorage storage = new InMemoryPowStorage(2);
+        long expiresAt = System.currentTimeMillis() + 60_000;
+        storage.save("k1", expiresAt, 1000);
+        storage.save("k2", expiresAt, 1000);
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> storage.save("k3", expiresAt, 1000));
+        assertTrue(ex.getMessage().contains("上限"));
+        // 同 key 覆盖不受容量限制,且新记录生效
+        storage.save("k1", expiresAt, 2000);
+        assertEquals(2000, storage.find("k1").maxnumber());
+    }
+
+    @Test
+    void expiredEntriesDoNotConsumePendingLimit() {
+        InMemoryPowStorage storage = new InMemoryPowStorage(2);
+        long expiresAt = System.currentTimeMillis() + 60_000;
+        storage.save("expired", System.currentTimeMillis() - 1, 1000);
+        storage.save("k1", expiresAt, 1000);
+        storage.save("k2", expiresAt, 1000); // 写入时先清理过期项,不应被误拒
+        assertNotNull(storage.find("k2"));
+        assertThrows(IllegalStateException.class, () -> storage.save("k3", expiresAt, 1000));
     }
 }

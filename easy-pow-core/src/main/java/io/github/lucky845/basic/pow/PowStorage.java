@@ -11,7 +11,11 @@ public interface PowStorage {
     record ChallengeRecord(long expiresAtMs, long maxnumber) {
     }
 
-    /** 记录已签发挑战的元数据;同 challengeKey 重复签发时新记录覆盖旧记录。 */
+    /**
+     * 记录已签发挑战的元数据;同 challengeKey 重复签发时新记录覆盖旧记录。
+     * 实现可做容量保护(如 {@link InMemoryPowStorage#InMemoryPowStorage(int)});达到上限时抛
+     * {@link IllegalStateException},调用方应把签发接口转成 HTTP 429,避免耗尽攻击。
+     */
     void save(String challengeKey, long expiresAtMs, long maxnumber);
 
     /**
