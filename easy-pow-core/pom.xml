@@ -16,7 +16,8 @@
   <name>${project.artifactId}</name>
   <description>PoW 核心模块,无框架依赖</description>
 
-  <!-- 设计红线:compile scope 零第三方依赖;唯一依赖 junit-jupiter 为 test scope(版本由 spring-boot-dependencies 管理) -->
+  <!-- 设计红线:compile scope 零第三方依赖;slf4j-api 为 provided(不传递到使用方),
+       测试期另挂 slf4j-nop 抑制 "No SLF4J providers were found"(版本由 spring-boot-dependencies 管理) -->
   <dependencies>
     <!-- 用 provided 而非 compile:切换主存储会改变校验语义(CLOSED 下全部校验失败),必须留痕,
          但 Spring Boot 应用本来就带 slf4j;纯 Java 用户不引日志门面也不会因缺类而崩。 -->
@@ -24,6 +25,11 @@
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-nop</artifactId>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
