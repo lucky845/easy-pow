@@ -15,6 +15,8 @@ class PowChallengeIssuerTest {
     void rejectsMaxnumberBelow1000() {
         assertThrows(IllegalArgumentException.class, () -> issuer.issue(999, 60_000));
         assertThrows(IllegalArgumentException.class, () -> issuer.issue(0, 60_000));
+        // 上界 Long.MAX_VALUE 在 maxnumber+1 时溢出,必须同样拒绝而不是签发负难度挑战
+        assertThrows(IllegalArgumentException.class, () -> issuer.issue(Long.MAX_VALUE, 60_000));
     }
 
     @Test
