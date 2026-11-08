@@ -43,7 +43,7 @@
     <h1>Easy PoW 演示</h1>
     <p>PoW(Proof of Work)无感验证码:页面加载即自动解题,真实用户全程无感,脚本批量请求成本被显著抬高。</p>
 
-    <!-- altcha 官方前端组件(CDN 引入):自动请求 challengeurl,解出 number 后 POST verifyurl 校验 -->
+    <!-- altcha 前端组件(本地 vendor/altcha.min.js,MIT,altcha@2.3.0):自动请求 challengeurl,解出 number 后 POST verifyurl 校验 -->
     <altcha-widget challengeurl="/pow/challenge" verifyurl="/pow/verify" auto="onload"></altcha-widget>
 
     <h2>手动联调(调试用)</h2>
@@ -54,7 +54,7 @@
     <pre id="result">尚未解题</pre>
 </div>
 
-<script async defer src="https://cdn.jsdelivr.net/npm/altcha@2/dist/altcha.min.js" type="module"></script>
+<script async defer src="/vendor/altcha.min.js" type="module"></script>
 <script>
     const challengePre = document.getElementById("challenge");
     const resultPre = document.getElementById("result");
