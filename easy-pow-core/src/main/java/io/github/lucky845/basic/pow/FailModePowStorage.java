@@ -1,5 +1,8 @@
 package io.github.lucky845.basic.pow;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 给任意 {@link PowStorage} 套上 {@link PowStorageFailMode} 策略。
  *
@@ -13,6 +16,8 @@ package io.github.lucky845.basic.pow;
  * 否则每次请求都要等一次 Redis 超时,故障期间响应时间会整体劣化到超时值。</p>
  */
 public final class FailModePowStorage implements PowStorage {
+
+    private static final Logger LOG = LoggerFactory.getLogger(FailModePowStorage.class);
 
     /** 默认冷却时长:30 秒。 */
     public static final long DEFAULT_COOLDOWN_MS = 30_000L;
@@ -55,6 +60,14 @@ public final class FailModePowStorage implements PowStorage {
         return primary;
     }
 
+    /** 熔断开始至今的毫秒数(未熔断为 0)。只暴露 1/0 看不出"已经降级 5 分钟没人管"。 */
+    public long trippedForMs() {
+        if (!isTripped()) {
+            return 0L;
+        }
+        return Math.max(0L, System.currentTimeMillis() - trippedAt);
+    }
+
     /** 当前是否处于熔断(主存储被跳过)状态。供指标暴露。 */
     public boolean isTripped() {
         return tripped && System.currentTimeMillis() - trippedAt < cooldownMs;
@@ -68,14 +81,23 @@ public final class FailModePowStorage implements PowStorage {
 
     @Override
     public void save(String challengeKey, long expiresAtMs, long maxnumber) {
-        // 签发失败直接影响用户(拿不到挑战),不允许降级,原样抛出由调用方处理
-        primary.save(challengeKey, expiresAtMs, maxnumber);
+        // 签发失败直接影响用户(拿不到挑战),OPEN 也不把签发请求转给降级存储;
+        // 但失败必须计入熔断状态,否则"写了半天没写进去"在指标上完全不可见
+        try {
+            primary.save(challengeKey, expiresAtMs, maxnumber);
+            reset();
+        } catch (RuntimeException e) {
+            markTripped(e);
+            throw e;
+        }
     }
 
     @Override
     public ChallengeRecord find(String challengeKey) {
-        if (isTripped()) {
-            return mode == PowStorageFailMode.OPEN && fallback != null ? fallback.find(challengeKey) : null;
+        if (isTripped() && mode == PowStorageFailMode.OPEN) {
+            // 只有 OPEN 会短路:CLOSED 短路返回 null 会被校验器判成 EXPIRED,
+            // 把"存储挂了"伪装成"挑战过期",比 500 更难查
+            return fallback != null ? fallback.find(challengeKey) : null;
         }
         try {
             ChallengeRecord record = primary.find(challengeKey);
@@ -113,11 +135,28 @@ public final class FailModePowStorage implements PowStorage {
      */
     private <T> T degrade(StorageSupplier<T> degraded, RuntimeException cause) {
         if (mode == PowStorageFailMode.CLOSED) {
+            // CLOSED 拒绝一切校验,这是比 OPEN 更重的降级:不置位的话 pow.storage.tripped 永远是 0,运维看不到服务已经不可用
+            markTripped(cause);
             throw cause;
         }
+        markTripped(cause);
+        try {
+            return degraded.get();
+        } catch (RuntimeException fallbackFailure) {
+            LOG.warn("PoW 降级存储同样失败: {}", fallbackFailure.toString());
+            throw fallbackFailure;
+        }
+    }
+
+    /** 记录熔断起点;仅状态翻转时打一条日志,避免故障期打爆日志。 */
+    private void markTripped(RuntimeException cause) {
+        boolean wasTripped = tripped;
         tripped = true;
         trippedAt = System.currentTimeMillis();
-        return degraded.get();
+        if (!wasTripped) {
+            // 降级会改变校验语义(CLOSED 下所有校验都失败),只在状态翻转时打一条,避免故障期打爆日志
+            LOG.warn("PoW 主存储故障,进入 {} 降级,冷却 {} ms: {}", mode, cooldownMs, cause.toString());
+        }
     }
 
     @FunctionalInterface

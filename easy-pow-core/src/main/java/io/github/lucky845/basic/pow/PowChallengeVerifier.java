@@ -11,6 +11,8 @@ public final class PowChallengeVerifier {
     private final PowStorage storage;
     /** 校验事件监听(难度自适应观测点);可为 null。 */
     private final PowDifficultyListener listener;
+    /** 存储故障旁路;可为 null。 */
+    private final PowStorageErrorListener errorListener;
 
     public PowChallengeVerifier(PowConfig config) {
         this(config, new InMemoryPowStorage());
@@ -23,9 +25,31 @@ public final class PowChallengeVerifier {
 
     /** 挂载校验事件监听:仅校验通过时回调 {@code listener.onVerified(challenge)};可为 null。 */
     public PowChallengeVerifier(PowConfig config, PowStorage storage, PowDifficultyListener listener) {
+        this(config, storage, listener, null);
+    }
+
+    /**
+     * 全量构造:额外挂载存储故障旁路。{@link PowStatus#STORAGE_ERROR} 由本类产生,
+     * 旁路只用于把异常对象交给指标/告警,不改变返回结果。
+     */
+    public PowChallengeVerifier(PowConfig config, PowStorage storage, PowDifficultyListener listener,
+                                PowStorageErrorListener errorListener) {
         this.config = config;
         this.storage = storage;
         this.listener = listener;
+        this.errorListener = errorListener;
+    }
+
+    /** 通知存储故障旁路;旁路异常一律吞掉,绝不影响校验结论。 */
+    private void notifyStorageError(String operation, RuntimeException cause) {
+        if (errorListener == null) {
+            return;
+        }
+        try {
+            errorListener.onStorageError(operation, cause);
+        } catch (RuntimeException ignored) {
+            // 观测是旁路
+        }
     }
 
     /**
@@ -59,6 +83,7 @@ public final class PowChallengeVerifier {
         try {
             record = storage.find(solution.challenge());
         } catch (RuntimeException e) {
+            notifyStorageError("find", e);
             return fail(PowStatus.STORAGE_ERROR,
                     "存储查询失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), solution.challenge());
         }
@@ -80,6 +105,7 @@ public final class PowChallengeVerifier {
             consumed = storage.tryConsume(solution.challenge(), config.defaultTtlMs());
         } catch (RuntimeException e) {
             // 消费失败绝不能 fail-open:放行等于关闭防重放
+            notifyStorageError("consume", e);
             return fail(PowStatus.STORAGE_ERROR,
                     "存储消费失败: " + e.getClass().getSimpleName() + ": " + e.getMessage(), solution.challenge());
         }

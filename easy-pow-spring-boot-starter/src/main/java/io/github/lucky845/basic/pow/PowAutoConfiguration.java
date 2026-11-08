@@ -46,24 +46,28 @@ public class PowAutoConfiguration {
     @ConditionalOnMissingBean
     public PowChallengeIssuer powChallengeIssuer(PowProperties properties, PowStorage storage,
                                                  ObjectProvider<AdaptiveDifficulty> adaptive,
-                                                 ObjectProvider<PowDifficultyListener> listeners) {
+                                                 ObjectProvider<PowDifficultyListener> listeners,
+                                                 ObjectProvider<PowStorageErrorListener> errorListeners) {
         PowConfig config = properties.toConfig();
         AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
         PowDifficultyListener listener = composite(adjuster, listeners);
+        PowStorageErrorListener errorListener = storageErrorComposite(errorListeners);
         if (adjuster == null) {
-            return new PowChallengeIssuer(config, storage, null, listener);
+            return new PowChallengeIssuer(config, storage, null, listener, errorListener);
         }
-        return new PowChallengeIssuer(config, storage, adjuster::currentMaxnumber, listener);
+        return new PowChallengeIssuer(config, storage, adjuster::currentMaxnumber, listener, errorListener);
     }
 
     @Bean
     @ConditionalOnMissingBean
     public PowChallengeVerifier powChallengeVerifier(PowProperties properties, PowStorage storage,
                                                      ObjectProvider<AdaptiveDifficulty> adaptive,
-                                                     ObjectProvider<PowDifficultyListener> listeners) {
+                                                     ObjectProvider<PowDifficultyListener> listeners,
+                                                     ObjectProvider<PowStorageErrorListener> errorListeners) {
         PowConfig config = properties.toConfig();
         AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
-        return new PowChallengeVerifier(config, storage, composite(adjuster, listeners));
+        return new PowChallengeVerifier(config, storage, composite(adjuster, listeners),
+                storageErrorComposite(errorListeners));
     }
 
     /**
@@ -87,6 +91,29 @@ public class PowAutoConfiguration {
             FailModePowStorage failMode = current instanceof FailModePowStorage f ? f : null;
             return new PoWMetrics(registry.getIfAvailable(), properties.toConfig(), adjuster, failMode);
         }
+    }
+
+    /**
+     * 存储故障旁路同样允许存在多个(指标 + 用户自己的告警),按注册顺序依次通知;
+     * 任何一个抛异常都不影响其余监听器与原异常传播。
+     */
+    private static PowStorageErrorListener storageErrorComposite(ObjectProvider<PowStorageErrorListener> listeners) {
+        java.util.List<PowStorageErrorListener> all = listeners.orderedStream().toList();
+        if (all.isEmpty()) {
+            return null;
+        }
+        if (all.size() == 1) {
+            return all.get(0);
+        }
+        return (operation, cause) -> {
+            for (PowStorageErrorListener each : all) {
+                try {
+                    each.onStorageError(operation, cause);
+                } catch (RuntimeException ignored) {
+                    // 观测是旁路:一个监听器出错不许打断其余的
+                }
+            }
+        };
     }
 
     /**

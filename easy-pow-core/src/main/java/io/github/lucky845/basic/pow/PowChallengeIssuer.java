@@ -22,6 +22,8 @@ public final class PowChallengeIssuer {
     private final LongSupplier maxnumberSupplier;
     /** 签发事件监听(难度自适应观测点);可为 null。 */
     private final PowDifficultyListener listener;
+    /** 存储故障旁路;可为 null。 */
+    private final PowStorageErrorListener errorListener;
 
     public PowChallengeIssuer(PowConfig config) {
         this(config, new InMemoryPowStorage());
@@ -39,10 +41,22 @@ public final class PowChallengeIssuer {
      */
     public PowChallengeIssuer(PowConfig config, PowStorage storage,
                               LongSupplier maxnumberSupplier, PowDifficultyListener listener) {
+        this(config, storage, maxnumberSupplier, listener, null);
+    }
+
+    /**
+     * 全量构造:额外挂载存储故障旁路,用于把签发路径的存储异常计入统一指标。
+     *
+     * @param errorListener 存储故障回调,可为 null;异常必须由调用方重新抛出,本类只做通知
+     */
+    public PowChallengeIssuer(PowConfig config, PowStorage storage,
+                              LongSupplier maxnumberSupplier, PowDifficultyListener listener,
+                              PowStorageErrorListener errorListener) {
         this.config = config;
         this.storage = storage;
         this.maxnumberSupplier = maxnumberSupplier == null ? () -> config.defaultMaxnumber() : maxnumberSupplier;
         this.listener = listener;
+        this.errorListener = errorListener;
     }
 
     /** 使用当前难度(挂载自适应时为 {@code maxnumberSupplier.getAsLong()})与默认有效期签发。 */
@@ -75,7 +89,20 @@ public final class PowChallengeIssuer {
         String challenge = Hashes.shaHex(algorithm, salt + number);
         String signature = Hashes.hmacHex(algorithm, config.secret(), challenge);
         long expiresAt = System.currentTimeMillis() + ttlMs;
-        storage.save(challenge, expiresAt, maxnumber);
+        try {
+            storage.save(challenge, expiresAt, maxnumber);
+        } catch (RuntimeException e) {
+            // 签发路径没有校验结论,{@link PowStatus#STORAGE_ERROR} 汇报不到这里;
+            // 额外通知一次,让"存储挂了"在指标上有一致的计数口径
+            if (errorListener != null) {
+                try {
+                    errorListener.onStorageError("issue", e);
+                } catch (RuntimeException ignored) {
+                    // 观测是旁路
+                }
+            }
+            throw e;
+        }
         if (listener != null) {
             try {
                 listener.onIssued(challenge);

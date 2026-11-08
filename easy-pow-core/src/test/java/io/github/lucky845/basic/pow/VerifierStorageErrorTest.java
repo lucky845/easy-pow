@@ -89,6 +89,44 @@ class VerifierStorageErrorTest {
     }
 
     @Test
+    @DisplayName("存储故障旁路收到操作名与原始异常,且不影响校验结论")
+    void storageErrorListenerReceivesOperationAndCause() {
+        BrokenStorage storage = new BrokenStorage();
+        PowConfig config = new PowConfig(SECRET);
+        PowChallenge challenge = new PowChallengeIssuer(config, storage).issue();
+        List<String> seen = new ArrayList<>();
+        PowChallengeVerifier verifier = new PowChallengeVerifier(config, storage, observer,
+                (operation, cause) -> seen.add(operation + ":" + cause.getClass().getSimpleName()));
+
+        storage.failOnFind = true;
+        assertEquals(PowStatus.STORAGE_ERROR,
+                verifier.verify(VerifierTestSupport.validSolution(challenge)).status());
+        storage.failOnFind = false;
+        storage.failOnConsume = true;
+        assertEquals(PowStatus.STORAGE_ERROR,
+                verifier.verify(VerifierTestSupport.validSolution(challenge)).status());
+
+        assertEquals(List.of("find:IllegalStateException", "consume:IllegalStateException"), seen,
+                "两个故障点都要上报,且带上操作名区分 find / consume");
+    }
+
+    @Test
+    @DisplayName("旁路自己抛异常也不得把 STORAGE_ERROR 变成别的结论")
+    void brokenListenerDoesNotMaskVerdict() {
+        BrokenStorage storage = new BrokenStorage();
+        PowConfig config = new PowConfig(SECRET);
+        PowChallenge challenge = new PowChallengeIssuer(config, storage).issue();
+        PowChallengeVerifier verifier = new PowChallengeVerifier(config, storage, observer,
+                (operation, cause) -> {
+                    throw new IllegalArgumentException("告警通道炸了");
+                });
+
+        storage.failOnFind = true;
+        assertEquals(PowStatus.STORAGE_ERROR,
+                verifier.verify(VerifierTestSupport.validSolution(challenge)).status());
+    }
+
+    @Test
     @DisplayName("每个拒绝分支都会回调 onRejected,包括签名与解析失败")
     void everyRejectBranchIsObserved() {
         BrokenStorage storage = new BrokenStorage();

@@ -21,6 +21,9 @@ class FailModePowStorageTest {
 
         @Override
         public void save(String challengeKey, long expiresAtMs, long maxnumber) {
+            if (broken) {
+                throw new IllegalStateException("Redis 连接被拒绝");
+            }
             delegate.save(challengeKey, expiresAtMs, maxnumber);
         }
 
@@ -51,7 +54,11 @@ class FailModePowStorageTest {
         storage.save("c1", System.currentTimeMillis() + 60_000, 1000);
         primary.broken = true;
         assertThrows(IllegalStateException.class, () -> storage.find("c1"));
-        assertFalse(storage.isTripped(), "CLOSED 不进入熔断:每次都应重试主存储");
+        // CLOSED 不是短路,而是"照样重试主存储 + 置熔断位":服务已经不可用,指标必须显示 1,
+        // 否则 pow.storage.tripped 恒为 0,运维看不到 outage。这里同时锁死"仍会重试"。
+        assertTrue(storage.isTripped(), "CLOSED 也要置熔断位,否则故障不可观测");
+        assertThrows(IllegalStateException.class, () -> storage.find("c1"));
+        assertEquals(2, primary.calls.get(), "CLOSED 不短路:每次都要重试主存储,恢复即自动复位");
     }
 
     @Test
@@ -87,9 +94,11 @@ class FailModePowStorageTest {
         InMemoryPowStorage fallback = new InMemoryPowStorage();
         FailModePowStorage storage = new FailModePowStorage(primary, fallback, PowStorageFailMode.OPEN);
         primary.broken = true;
-        storage.save("c1", System.currentTimeMillis() + 60_000, 1000);
-        // 主存储故障 → 降级到 fallback;fallback 里没有记录,find 返回 null,
-        // 因此先把它当作"签发记录不存在"再补一条到 fallback 上,才能验证降级路径的防重放
+        // 签发不降级:主存储故障时 save 直接把异常抛给调用方(签发失败=用户拿不到挑战),
+        // 这里吞掉异常只为继续铺 fallback 上的记录,验证降级期间的防重放
+        assertThrows(IllegalStateException.class,
+                () -> storage.save("c1", System.currentTimeMillis() + 60_000, 1000));
+        // 降级到 fallback;fallback 里没有 c1,find 返回 null
         assertNull(storage.find("c1"), "降级存储没有该记录");
         fallback.save("c1", System.currentTimeMillis() + 60_000, 1000);
         assertTrue(storage.tryConsume("c1", 30_000));
@@ -122,9 +131,25 @@ class FailModePowStorageTest {
         FlakyStorage primary = new FlakyStorage();
         FailModePowStorage storage = new FailModePowStorage(primary, new InMemoryPowStorage(),
                 PowStorageFailMode.OPEN);
-        primary.broken = true;
-        // save 本身不因 broken 抛错(委托给 delegate),但语义上它必须打到主存储
         storage.save("c1", System.currentTimeMillis() + 60_000, 1000);
         assertEquals(1000L, primary.delegate.find("c1").maxnumber());
+    }
+
+    @Test
+    @DisplayName("签发失败也计入熔断:异常照旧抛出,但 tripped 与 trippedForMs 必须可见")
+    void saveFailureMarksTripped() {
+        FlakyStorage primary = new FlakyStorage();
+        FailModePowStorage storage = new FailModePowStorage(primary, new InMemoryPowStorage(),
+                PowStorageFailMode.CLOSED, 30_000L);
+        primary.broken = true;
+        assertThrows(IllegalStateException.class,
+                () -> storage.save("c1", System.currentTimeMillis() + 60_000, 1000));
+        assertTrue(storage.isTripped());
+        assertTrue(storage.trippedForMs() >= 0L);
+        // 成功一次即复位
+        primary.broken = false;
+        storage.save("c2", System.currentTimeMillis() + 60_000, 1000);
+        assertFalse(storage.isTripped());
+        assertEquals(0L, storage.trippedForMs());
     }
 }

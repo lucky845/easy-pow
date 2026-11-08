@@ -13,9 +13,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  *
  * <p>只有当调用方自己引入了 {@code spring-boot-starter-data-redis}、容器里也确实存在
  * {@link StringRedisTemplate} 时才会生效。这个类是独立的自动配置,并且用
- * {@code before = PowAutoConfiguration.class} 声明必须先于内存存储求值——
- * 否则 {@link PowAutoConfiguration#powStorage(PowProperties)} 上的
- * {@code @ConditionalOnMissingBean} 会先看到内存实现,把 Redis 实现挤掉。
+ * {@code before = PowAutoConfiguration.class} 声明先于内存存储求值。
+ *
+ * <p>{@code @ConditionalOnMissingBean(PowStorage.class)} 必须放在**类**上而不是 Bean 方法上:
+ * 方法级条件在 {@link AutoConfiguration} 之间按"后定义者赢"决定注册,而 {@code before}
+ * 只影响排序不影响胜负,两种写法叠在一起会出现谁都没被注册、最终注入内存实现的情况。
+ * 类级条件在解析阶段求值,语义是"容器里没有用户自己声明的存储才上场",与 Redis 先于
+ * 内存存储求值的顺序配合即可确定结果。
  *
  * <p>装配优先级(与 easy-captcha 同款模式):
  * <ol>
@@ -33,6 +37,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
         afterName = "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration")
 @ConditionalOnClass(StringRedisTemplate.class)
 @ConditionalOnBean(StringRedisTemplate.class)
+@ConditionalOnMissingBean(PowStorage.class)
 public class RedisPowAutoConfiguration {
 
     /**
@@ -40,9 +45,10 @@ public class RedisPowAutoConfiguration {
      *
      * <p>外面套一层 {@link FailModePowStorage}:Redis 是网络依赖,一次抖动不该让校验接口
      * 既不 fail-closed 也不 fail-open,而是抛 500。故障时怎么取舍交给 {@code easy-pow.storage-fail-mode}。</p>
+     *
+     * <p>{@code @ConditionalOnMissingBean} 已提升到类级,这里不再重复声明。</p>
      */
     @Bean
-    @ConditionalOnMissingBean(PowStorage.class)
     public PowStorage powStorage(StringRedisTemplate redisTemplate,
                                  PowProperties properties,
                                  ObjectProvider<PowStorage> storageProvider) {

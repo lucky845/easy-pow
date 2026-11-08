@@ -79,6 +79,16 @@ public final class InMemoryPowStorage implements PowStorage {
         }
     }
 
+    /** 当前驻留条目数(含已消费、待清理的)。供指标暴露:容量上限打满时先看这里,而不是从拒绝率反推。 */
+    public int size() {
+        return entries.size();
+    }
+
+    /** 待处理挑战上限(0 = 不限)。 */
+    public int maxPendingChallenges() {
+        return maxPendingChallenges;
+    }
+
     /** 已消费的条目在消费标记窗口内仍返回记录,窗口过后返回 null(与 Redis 消费标记一致)。 */
     @Override
     public ChallengeRecord find(String challengeKey) {

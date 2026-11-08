@@ -45,4 +45,56 @@ class PowChallengeIssuerTest {
         limited.issue(5000, 60_000);
         assertThrows(IllegalStateException.class, () -> limited.issue(5000, 60_000));
     }
+
+    @Test
+    void notifiesStorageErrorListenerAndStillPropagates() {
+        java.util.List<String> ops = new java.util.ArrayList<>();
+        PowChallengeIssuer broken = new PowChallengeIssuer(config, new PowStorage() {
+            @Override
+            public void save(String challengeKey, long expiresAtMs, long maxnumber) {
+                throw new IllegalStateException("磁盘满了");
+            }
+
+            @Override
+            public ChallengeRecord find(String challengeKey) {
+                return null;
+            }
+
+            @Override
+            public boolean tryConsume(String challengeKey, long ttlMs) {
+                return false;
+            }
+        }, null, null, (operation, cause) -> ops.add(operation + ":" + cause.getMessage()));
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> broken.issue(5000, 60_000));
+        assertEquals("磁盘满了", thrown.getMessage(), "异常必须原样抛给调用方");
+        assertEquals(java.util.List.of("issue:磁盘满了"), ops);
+    }
+
+    @Test
+    void brokenStorageErrorListenerDoesNotMaskIssuerFailure() {
+        PowChallengeIssuer broken = new PowChallengeIssuer(config, new PowStorage() {
+            @Override
+            public void save(String challengeKey, long expiresAtMs, long maxnumber) {
+                throw new IllegalStateException("磁盘满了");
+            }
+
+            @Override
+            public ChallengeRecord find(String challengeKey) {
+                return null;
+            }
+
+            @Override
+            public boolean tryConsume(String challengeKey, long ttlMs) {
+                return false;
+            }
+        }, null, null, (operation, cause) -> {
+            throw new IllegalArgumentException("告警通道自己炸了");
+        });
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> broken.issue(5000, 60_000));
+        assertEquals("磁盘满了", thrown.getMessage());
+    }
 }
