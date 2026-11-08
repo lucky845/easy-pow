@@ -39,6 +39,8 @@ public final class InMemoryPowStorage implements PowStorage {
 
     private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
     private final Object saveLock = new Object();
+    /** 还需清理多少条才回到 {@link #COMPACT_THRESHOLD} 以下;> 0 时下次 save 才做全表扫描。 */
+    private int compactionDebt;
     /** 0 = 不限;> 0 时待处理挑战(含消费保留窗口内记录)达到该数量即拒绝新 key 签发。 */
     private final int maxPendingChallenges;
 
@@ -61,8 +63,12 @@ public final class InMemoryPowStorage implements PowStorage {
     public void save(String challengeKey, long expiresAtMs, long maxnumber) {
         synchronized (saveLock) {
             long now = System.currentTimeMillis();
-            if (entries.size() >= COMPACT_THRESHOLD || maxPendingChallenges > 0) {
-                sweep(now);
+            if (maxPendingChallenges > 0 || compactionDebt > 0) {
+                // 有上限时每轮都要扫描才能准确判断容量;无上限时按债务节流,避免每次 save 都 O(n)
+                compactionDebt = Math.max(0, compactionDebt - sweep(now));
+            } else if (entries.size() >= COMPACT_THRESHOLD) {
+                int removed = sweep(now);
+                compactionDebt = Math.max(0, entries.size() - COMPACT_THRESHOLD + 1 - removed);
             }
             if (maxPendingChallenges > 0
                     && entries.size() >= maxPendingChallenges
@@ -104,12 +110,21 @@ public final class InMemoryPowStorage implements PowStorage {
         return won[0] != 0L;
     }
 
-    private void sweep(long now) {
+    /**
+     * 清理已不可用的条目(过期未消费 / 消费标记窗口已过)。
+     *
+     * @return 本次实际清理的条数:调用方据此把"清理多少个才降回阈值"记进 {@link #compactionDebt},
+     *         否则每次 save 都会触发一次全表扫描,阈值本身失去节流意义。
+     */
+    private int sweep(long now) {
+        int removed = 0;
         Iterator<Map.Entry<String, Entry>> it = entries.entrySet().iterator();
         while (it.hasNext()) {
             if (it.next().getValue().retainUntilMs() <= now) {
                 it.remove();
+                removed++;
             }
         }
+        return removed;
     }
 }

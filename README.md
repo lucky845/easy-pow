@@ -379,7 +379,7 @@ if (!bucket.tryConsume(1)) {
 ## 构建
 
 ```
-mvn -B verify                     # 跑测试(core 55 + starter 34 = 89 用例,其中 5 例是真机 Redis 冒烟)
+mvn -B verify                     # 跑测试(core 56 + starter 34 = 90 用例,其中 5 例是真机 Redis 冒烟)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```
