@@ -30,7 +30,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class PowController {
 
     private static final long ISSUE_WINDOW_MS = 60_000L;
-    private static final int MAX_ISSUES_PER_WINDOW = 30;
+    /** 固定窗口上限:本机联调脚本会连刷几十次,给足余量,同时仍能演示"签发必须限流"。 */
+    private static final int MAX_ISSUES_PER_WINDOW = 200;
 
     private final PowChallengeIssuer issuer;
     private final PowChallengeVerifier verifier;

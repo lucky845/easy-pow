@@ -47,7 +47,7 @@
     <altcha-widget challengeurl="/pow/challenge" verifyurl="/pow/verify" auto="onload"></altcha-widget>
 
     <h2>手动联调(调试用)</h2>
-    <p>与 altcha 组件相同的完整流程:获取挑战 → 本地枚举 number → base64(JSON) 回传校验。</p>
+    <p>与 altcha 组件相同的完整流程:获取挑战 → 本地枚举 number(SHA256(salt+n) == challenge,穷举上界即 maxnumber)→ 提交 base64(JSON) payload。</p>
     <button id="fetchBtn">1. 获取挑战</button>
     <pre id="challenge">尚未获取</pre>
     <button id="solveBtn" disabled>2. 本地解题并校验</button>
