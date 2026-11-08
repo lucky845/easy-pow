@@ -5,7 +5,7 @@
 发布到 Maven Central 的组件:`easy-pow-core`、`easy-pow-spring-boot-starter`(`easy-pow-demo` 不发布)。
 坐标与配置项说明见 [README](README.md)。
 
-## [Unreleased]
+## [0.1.5] - 2026-11-08
 
 ### 新增
 
@@ -15,6 +15,7 @@
   页面顶部同步显示,避免看到包装层名字却不知道底层是内存还是 Redis。为此 `FailModePowStorage` 新增 `primary()`。
 - **`tools/pow-bench.mjs`**:零依赖 Node 压测脚本,分别统计签发与校验延迟;README 新增「压测」节含参考读数。
 - demo 签发限流可用环境变量 `ISSUE_RATE_DISABLED=true` 关闭(压测需要),关闭时 429 文案会提示。
+- `FailModePowStorage.primary()`:暴露被包装的主存储,便于诊断与自定义装配。
 
 ### 修复
 
@@ -22,6 +23,10 @@
   现按"清理多少条才降回阈值"记账(`compactionDebt`),扫描完一次后不再每写必扫。
 - `PowChallengeVerifier` 的 number 上界判定补注释明确:上界取自**服务端存储的记录**,
   `solution.maxnumber` 是客户端自填的不可信字段;新增用例锁死"客户端谎报巨大 maxnumber 也无法放宽上界"。
+
+### 兼容性
+
+- 无破坏性变更。新增的 `primary()` 与 `tools/pow-bench.mjs` 均为追加,`/pow/storage` 只存在于 demo。
 
 ## [0.1.4] - 2026-11-08
 
