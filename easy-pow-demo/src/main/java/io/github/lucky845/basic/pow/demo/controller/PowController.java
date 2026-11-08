@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import io.github.lucky845.basic.pow.AltchaCodec;
 import io.github.lucky845.basic.pow.PowChallengeIssuer;
 import io.github.lucky845.basic.pow.PowChallengeVerifier;
+import io.github.lucky845.basic.pow.FailModePowStorage;
 import io.github.lucky845.basic.pow.PowProperties;
 import io.github.lucky845.basic.pow.PowResult;
 import io.github.lucky845.basic.pow.PowStatus;
@@ -53,8 +54,12 @@ public class PowController {
     /** 当前存储实现与故障策略:页面据此提示「内存 / Redis」,省得用户猜自己看的是哪条链路。 */
     @GetMapping(value = "/storage", produces = MediaType.APPLICATION_JSON_VALUE)
     public Map<String, String> storage() {
+        // FailModePowStorage 是包装层,单独显示它等于没告诉用户底层是内存还是 Redis
         String name = storage.getClass().getSimpleName();
-        return Map.of("storage", name, "failMode", failMode == null ? "" : failMode);
+        if (storage instanceof FailModePowStorage wrapper) {
+            name = wrapper.primary().getClass().getSimpleName() + " (经 FailModePowStorage 包装)";
+        }
+        return Map.of("storage", name, "failMode", failMode == null ? "DEFAULT" : failMode);
     }
 
     /** 下发 altcha challenge,字段与官方协议一致。 */
@@ -108,11 +113,23 @@ public class PowController {
         }
         Window window = issueWindows.compute(clientIp, (key, old) ->
                 old == null || now - old.startMs >= ISSUE_WINDOW_MS ? new Window(now) : old);
+        if (limitDisabled()) {
+            window.count.incrementAndGet(); // 仅统计,压测用
+            return;
+        }
         int count = window.count.updateAndGet(c -> Math.min(c + 1, MAX_ISSUES_PER_WINDOW + 1));
         if (count > MAX_ISSUES_PER_WINDOW) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
-                    "challenge 签发过于频繁,请稍后重试");
+                    "challenge 签发过于频繁,请稍后重试(压测请设 ISSUE_RATE_DISABLED=true)");
         }
+    }
+
+    /**
+     * 压测开关(环境变量 {@code ISSUE_RATE_DISABLED=true})。默认关闭限流仅影响本 demo,
+     * 用于把"服务端 PoW 开销"与"限流拒绝"两个变量分开测;线上仍必须限流。
+     */
+    private static boolean limitDisabled() {
+        return Boolean.parseBoolean(System.getenv("ISSUE_RATE_DISABLED"));
     }
 
     private static final class Window {

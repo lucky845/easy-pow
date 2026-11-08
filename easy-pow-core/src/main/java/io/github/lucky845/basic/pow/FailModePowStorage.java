@@ -50,6 +50,11 @@ public final class FailModePowStorage implements PowStorage {
         this(primary, fallback, mode, DEFAULT_COOLDOWN_MS);
     }
 
+    /** 被包装的主存储(内存 / Redis)。诊断接口据此告诉运维真实用的是哪一个,而不是只看到包装层。 */
+    public PowStorage primary() {
+        return primary;
+    }
+
     /** 当前是否处于熔断(主存储被跳过)状态。供指标暴露。 */
     public boolean isTripped() {
         return tripped && System.currentTimeMillis() - trippedAt < cooldownMs;
