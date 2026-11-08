@@ -20,6 +20,10 @@
 - 签发器原先只拦 `maxnumber == Long.MAX_VALUE`,`Long.MAX_VALUE - 1` 等值在内部 `maxnumber + 1` 时仍会溢出成负数并通过下界校验;改为任意 `>= Long.MAX_VALUE` 一律拒绝。
 - `PowChallenge` / `PowChallengeIssuer` 的 Javadoc 仍写着"固定 SHA-256",与 0.1.2 起的多算法行为不符,已更正。
 
+### 工程
+
+- surefire 增加 `-javaagent:mockito-core`,消除 Mockito inline mock maker 的自附加告警(JDK 未来版本会禁止自附加)。
+
 ## [0.1.2] - 2026-11-07
 
 ### 新增
