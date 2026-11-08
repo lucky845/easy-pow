@@ -21,7 +21,7 @@ public record PowConfig(String secret, long defaultMaxnumber, long defaultTtlMs,
         if (secret == null || secret.isBlank()) {
             throw new IllegalArgumentException("secret 必填,且不能为空白字符串");
         }
-        if (defaultMaxnumber < 1000 || defaultMaxnumber == Long.MAX_VALUE) {
+        if (defaultMaxnumber < 1000 || defaultMaxnumber >= Long.MAX_VALUE) {
             throw new IllegalArgumentException("defaultMaxnumber 非法(需 >= 1000): " + defaultMaxnumber);
         }
         if (defaultTtlMs <= 0) {

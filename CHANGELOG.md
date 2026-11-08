@@ -17,12 +17,12 @@
 
 ### 修复
 
-- 签发器原先只拦 `maxnumber == Long.MAX_VALUE`,`Long.MAX_VALUE - 1` 等值在内部 `maxnumber + 1` 时仍会溢出成负数并通过下界校验;改为任意 `>= Long.MAX_VALUE` 一律拒绝。
+- 签发器与 `PowConfig` 原先只拦 `maxnumber == Long.MAX_VALUE`;现在统一为 `>= Long.MAX_VALUE` 一律拒绝,与内部 `maxnumber + 1` 的闭区间上界保持一致。`Long.MAX_VALUE - 1` 加一后仍是正数,仍可合法使用。(上一条变更说明曾把 `Long.MAX_VALUE - 1` 写成会溢出,属笔误,已在 `PowConfigTest` 中用正向断言固定真实行为。)
 - `PowChallenge` / `PowChallengeIssuer` 的 Javadoc 仍写着"固定 SHA-256",与 0.1.2 起的多算法行为不符,已更正。
 
 ### 工程
 
-- surefire 增加 `-javaagent:mockito-core`,消除 Mockito inline mock maker 的自附加告警(JDK 未来版本会禁止自附加)。
+- `easy-pow-spring-boot-starter` 的 surefire 增加 `-javaagent:mockito-core`,消除 Mockito inline mock maker 的自附加告警(JDK 未来版本会禁止自附加)。只在引入 Mockito 的模块启用——core 无该依赖,全局启用会让 fork JVM 找不到 agent jar 直接崩溃。
 
 ## [0.1.2] - 2026-11-07
 
