@@ -18,6 +18,14 @@ easy-pow:
   #   min-maxnumber: 1000
   #   max-maxnumber: 200000
 
+# 监控指标(演示用):暴露 /actuator/metrics,用来观察 pow.challenge.issued / pow.challenge.verified / pow.maxnumber / pow.solve.ms.ewma
+# starter 检测到 MeterRegistry 时自动注册 PoWMetrics;不需改任何 Java 代码。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: metrics
+
 logging:
   level:
     io.github.lucky845: INFO

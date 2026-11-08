@@ -102,6 +102,27 @@ class AdaptiveAutoConfigurationTest {
                     assertThat(context.getBean(io.micrometer.core.instrument.MeterRegistry.class)
                             .get(PoWMetrics.ISSUED).counter().count()).isEqualTo(1.0);
                     assertThat(metrics.currentMaxnumber()).isEqualTo(2000.0);
+                    // 未开自适应:EWMA 用 -1 表示"不适用",不能当成 0ms
+                    assertThat(metrics.currentSolveMsEwma()).isEqualTo(-1D);
+                    assertThat(context.getBean(io.micrometer.core.instrument.MeterRegistry.class)
+                            .get(PoWMetrics.SOLVE_MS_EWMA).gauge().value()).isEqualTo(-1D);
+                });
+    }
+
+    @Test
+    @DisplayName("自适应开启后 EWMA 指标反映实际观测值")
+    void exposesSolveEwmaUnderAdaptive() {
+        runner.withPropertyValues("easy-pow.adaptive.enabled=true")
+                .withBean(io.micrometer.core.instrument.MeterRegistry.class,
+                        io.micrometer.core.instrument.simple.SimpleMeterRegistry::new)
+                .run(context -> {
+                    AdaptiveDifficulty adaptive = context.getBean(AdaptiveDifficulty.class);
+                    adaptive.observeSolve(320L);
+                    assertThat(adaptive.ewmaSolveMs()).isEqualTo(320D);
+                    PoWMetrics metrics = context.getBean(PoWMetrics.class);
+                    assertThat(metrics.currentSolveMsEwma()).isEqualTo(320D);
+                    assertThat(context.getBean(io.micrometer.core.instrument.MeterRegistry.class)
+                            .get(PoWMetrics.SOLVE_MS_EWMA).gauge().value()).isEqualTo(320D);
                 });
     }
 
