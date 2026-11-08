@@ -1,0 +1,14 @@
+# Redis 存储演示:--spring.profiles.active=redis 启动
+# starter 的 RedisPowAutoConfiguration 检测到 StringRedisTemplate 后自动把 PowStorage 换成
+# RedisPowStorage(外面套 FailModePowStorage,Redis 抖动时按 easy-pow.storage-fail-mode 取舍)。
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+
+easy-pow:
+  # 演示 fail-closed:Redis 挂了直接拒绝校验(另一选择 OPEN = 放行,见 README 配置参考)
+  storage-fail-mode: CLOSED
+  storage-cooldown-ms: 5000

@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **demo 演示 Redis 存储**:新增 `application-redis.yml`,`--spring.profiles.active=redis` 即切到 `RedisPowStorage`,
+  用来验证 starter「有 `StringRedisTemplate` 就自动装配 Redis 存储」这条链路(此前只有单元测试,没有端到端路径)。
+- **`GET /pow/storage`**:返回当前存储实现与故障策略,如 `{"storage":"RedisPowStorage (经 FailModePowStorage 包装)","failMode":"CLOSED"}`;
+  页面顶部同步显示,避免看到包装层名字却不知道底层是内存还是 Redis。为此 `FailModePowStorage` 新增 `primary()`。
+- **`tools/pow-bench.mjs`**:零依赖 Node 压测脚本,分别统计签发与校验延迟;README 新增「压测」节含参考读数。
+- demo 签发限流可用环境变量 `ISSUE_RATE_DISABLED=true` 关闭(压测需要),关闭时 429 文案会提示。
+
 ### 修复
 
 - **内存存储清理退化为 O(n²)**:超过 `COMPACT_THRESHOLD` 后,无容量上限时每次 `save` 都触发一次全表扫描。

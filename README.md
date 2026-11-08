@@ -232,15 +232,21 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.max-pending-challenges` 只�
 
 ```
 mvn -pl easy-pow-demo -am package
-java -jar easy-pow-demo/target/easy-pow-demo-0.1.2.jar
+java -jar easy-pow-demo/target/easy-pow-demo-0.1.4.jar
+
+# 切到 Redis 存储(需本机 6379 有 Redis;验证 starter 的自动装配链路)
+java -jar easy-pow-demo/target/easy-pow-demo-0.1.4.jar --spring.profiles.active=redis
 ```
 
 1. 浏览器打开 <http://localhost:8080/>,页面自动完成"获取挑战 → 本地解题 → 校验"全流程(altcha 组件)。
 2. 也可用页面下方"手动联调"按钮,分步查看挑战 JSON、本地枚举解题、提交 `base64(JSON)` 校验。
 3. 接口约定:
    - `GET /pow/challenge` — 下发 altcha challenge JSON;
-   - `POST /pow/verify` — 表单字段 `payload`(或 `altcha`)携带 base64(JSON) solution,返回 `{"success":bool,"status":...,"message":...}`。
-4. 冒烟演示时可用 `--easy-pow.maxnumber=2000` 降低难度(demo 默认 50000,浏览器端到端求解 ≈150-500ms;库默认 1000000)。
+   - `POST /pow/verify` — 表单字段 `payload`(或 `altcha`)携带 base64(JSON) solution,返回 `{"success":bool,"status":...,"message":...}`;
+   - `GET /pow/storage` — 当前存储实现与故障策略,形如 `{"storage":"RedisPowStorage (经 FailModePowStorage 包装)","failMode":"CLOSED"}`,页面上也会显示。
+4. `--spring.profiles.active=redis` 启动后,`/pow/storage` 应显示 `RedisPowStorage`;此时挑战写在 `easy-pow:challenge:*`,
+   校验通过后主 key 被删除、只留 `easy-pow:consumed:*` 防重放标记(消费窗口内重放返回 `REUSED`)。
+5. 冒烟演示时可用 `--easy-pow.maxnumber=2000` 降低难度(demo 默认 50000,浏览器端到端求解 ≈150-500ms;库默认 1000000)。
 
 demo 的 `easy-pow.secret` 仅为演示值,生产环境必须替换为强随机值。
 
@@ -383,6 +389,31 @@ mvn -B verify                     # 跑测试(core 57 + starter 34 = 91 用例,�
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```
+
+## 压测
+
+`tools/pow-bench.mjs`(仅需 Node 18+,无第三方依赖)测**服务端承担的两段成本**,解题成本在浏览器侧,不计入:
+
+```
+ISSUE_RATE_DISABLED=true java -jar easy-pow-demo/target/easy-pow-demo-0.1.4.jar --spring.profiles.active=redis &
+node tools/pow-bench.mjs                                    # 默认 http://localhost:8080,32 并发,20 秒
+B=http://host:8080 CONC=64 DURATION=30000 node tools/pow-bench.mjs
+```
+
+- `ISSUE_RATE_DISABLED=true` 关掉 demo 的签发限流,否则几分钟内就撞 429(限流本身是演示级的,不是库行为);
+- 脚本每轮并行发一批挑战(默认 8 个)再统一求解校验。**单发会被测试进程的 GC 停顿污染**,签发 p90 能虚高到 100ms 以上;
+- 输出 `issued / verified / statuses` 计数与 issue、verify 两行 p50/p90/p99。
+
+一台 8 核机器上的参考读数(32 并发,Redis 存储,客户端含解题):
+
+| 指标 | 全核 | `-XX:ActiveProcessorCount=8` |
+| --- | --- | --- |
+| issue p50 / p99 | 3.9 / 129 ms | 376 / 394 ms |
+| verify p50 / p99 | 3.9 / 8.3 ms | 4.7 / 8.7 ms |
+| 端到端轮次 | 37 轮/s | 4.3 轮/s |
+
+签发与校验相差两个数量级,签发更贵:开销在安全随机数与 HMAC,不在存储层(同样 8 核时间片下改用内存存储,issue p50 351ms、verify p50 4.7ms,与 Redis 几乎一致)。
+全核一列的 p50 很低而 p99 上百毫秒,是 Tomcat 线程数与 CPU 争抢的排队效应,不是库内锁竞争。
 
 ## 发布 Maven Central
 
