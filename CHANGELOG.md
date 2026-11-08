@@ -14,11 +14,13 @@
 ### 测试
 
 - 新增 5 例:容量上限拒绝/同 key 可覆盖/过期项不占额度/签发器满拒/自动配置透传。
+- 新增 2 例:消费后保留窗口内 `find` 仍可见、窗口结束后不可见;另补 `PowConfig` 难度上界正/负向断言。
 
 ### 修复
 
 - 签发器与 `PowConfig` 原先只拦 `maxnumber == Long.MAX_VALUE`;现在统一为 `>= Long.MAX_VALUE` 一律拒绝,与内部 `maxnumber + 1` 的闭区间上界保持一致。`Long.MAX_VALUE - 1` 加一后仍是正数,仍可合法使用。(上一条变更说明曾把 `Long.MAX_VALUE - 1` 写成会溢出,属笔误,已在 `PowConfigTest` 中用正向断言固定真实行为。)
 - `PowChallenge` / `PowChallengeIssuer` 的 Javadoc 仍写着"固定 SHA-256",与 0.1.2 起的多算法行为不符,已更正。
+- **内存存储消费语义与 Redis 对齐**:`InMemoryPowStorage.tryConsume` 原先直接 `compareAndSet` 后就地修改条目,消费标记没有独立生命周期;现在记录消费时刻并按 `ttlMs` 保留,窗口内 `find` 仍返回记录,重放稳定判为 `REUSED` 而不是 `EXPIRED`。`RedisPowStorage` 类注释一直声称"与内存实现语义一致",此前实际相反。
 
 ### 工程
 

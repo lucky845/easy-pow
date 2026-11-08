@@ -88,4 +88,26 @@ class InMemoryPowStorageTest {
         assertNotNull(storage.find("k2"));
         assertThrows(IllegalStateException.class, () -> storage.save("k3", expiresAt, 1000));
     }
-}
+
+    @Test
+    void consumedEntryStaysVisibleWithinRetentionWindow() {
+        InMemoryPowStorage storage = new InMemoryPowStorage();
+        long expiresAt = System.currentTimeMillis() + 60_000;
+        storage.save("k", expiresAt, 1000);
+
+        assertTrue(storage.tryConsume("k", 5_000));
+        // 消费标记窗口内 find 仍返回记录:校验链据此判 REUSED 而不是 EXPIRED
+        assertNotNull(storage.find("k"));
+        assertFalse(storage.tryConsume("k", 5_000));
+    }
+
+    @Test
+    void consumedEntryDisappearsAfterRetentionWindow() throws Exception {
+        InMemoryPowStorage storage = new InMemoryPowStorage();
+        storage.save("k", System.currentTimeMillis() + 60_000, 1000);
+
+        assertTrue(storage.tryConsume("k", 30));
+        assertNotNull(storage.find("k"));
+        Thread.sleep(60);
+        assertNull(storage.find("k"));
+    }}
