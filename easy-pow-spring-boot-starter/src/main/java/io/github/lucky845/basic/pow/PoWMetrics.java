@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>{@code pow.challenge.issued} — 已签发挑战数(Counter)</li>
  *   <li>{@code pow.challenge.verified} — 校验通过数(Counter)</li>
  *   <li>{@code pow.maxnumber} — 当前难度上限(Gauge);未挂载自适应时恒为配置值</li>
+ *   <li>{@code pow.solve.ms.ewma} — 解题耗时 EWMA 毫秒(Gauge);无观测时为 -1</li>
  * </ul>
  *
  * <p>本类不采集挑战内容,{@code challengeKey} 入参不进入任何指标标签。</p>
@@ -26,6 +27,8 @@ public class PoWMetrics implements PowDifficultyListener {
     public static final String VERIFIED = "pow.challenge.verified";
     /** 当前难度上限。 */
     public static final String MAXNUMBER = "pow.maxnumber";
+    /** 解题耗时 EWMA(毫秒);无观测时为 -1,不参与聚合。 */
+    public static final String SOLVE_MS_EWMA = "pow.solve.ms.ewma";
 
     private final Counter issued;
     private final Counter verified;
@@ -38,6 +41,14 @@ public class PoWMetrics implements PowDifficultyListener {
      * @param adaptive 可选的难度自适应控制器;可为 null
      */
     public PoWMetrics(MeterRegistry registry, PowConfig config, AdaptiveDifficulty adaptive) {
+        if (registry == null) {
+            // 注册表缺席(容器里没有 Micrometer 的导出实现)时退化为空实现,不阻断启动
+            this.issued = null;
+            this.verified = null;
+            this.adaptive = adaptive;
+            this.fallbackMaxnumber = config.defaultMaxnumber();
+            return;
+        }
         this.adaptive = adaptive;
         this.fallbackMaxnumber = config.defaultMaxnumber();
         this.issued = Counter.builder(ISSUED).description("已签发的 PoW 挑战数").register(registry);
@@ -45,20 +56,33 @@ public class PoWMetrics implements PowDifficultyListener {
         Gauge.builder(MAXNUMBER, this, PoWMetrics::currentMaxnumber)
                 .description("当前难度上限(自适应开启时随 EWMA 变化)")
                 .register(registry);
+        // 只暴露结果(maxnumber)不暴露原因(ewma),运维无法判断控制器是否在有效工作
+        Gauge.builder(SOLVE_MS_EWMA, this, PoWMetrics::currentSolveMsEwma)
+                .description("解题耗时 EWMA 毫秒(无观测时为 -1)")
+                .register(registry);
     }
 
     @Override
     public void onIssued(String challengeKey) {
-        issued.increment();
+        if (issued != null) {
+            issued.increment();
+        }
     }
 
     @Override
     public void onVerified(String challengeKey) {
-        verified.increment();
+        if (verified != null) {
+            verified.increment();
+        }
     }
 
     /** 当前难度上限:挂载自适应时取实时值,否则回落配置值。 */
     public double currentMaxnumber() {
         return adaptive == null ? fallbackMaxnumber : adaptive.currentMaxnumber();
+    }
+
+    /** 解题耗时 EWMA:未挂载自适应时返回 -1(表示"不适用",而非 0ms)。 */
+    public double currentSolveMsEwma() {
+        return adaptive == null ? -1D : adaptive.ewmaSolveMs();
     }
 }

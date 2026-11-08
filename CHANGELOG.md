@@ -5,6 +5,21 @@
 发布到 Maven Central 的组件:`easy-pow-core`、`easy-pow-spring-boot-starter`(`easy-pow-demo` 不发布)。
 坐标与配置项说明见 [README](README.md)。
 
+## [Unreleased]
+
+### 新增
+
+- 指标 `pow.solve.ms.ewma`(Gauge):解题耗时 EWMA 毫秒。只暴露 `pow.maxnumber`(结果)无法判断自适应控制器是否在有效工作,现在原因与结果一并可见;未挂载自适应时为 `-1`(表示"不适用",不是 0ms)。
+
+### 修复
+
+- **`pow.challenge.issued` / `verified` / `maxnumber` 在真实应用里从未注册**:`PowAutoConfiguration.MetricsConfiguration#poWMetrics` 用 `@ConditionalOnBean(MeterRegistry)` 做配置期条件,而 `MeterRegistry` 由 `MetricsAutoConfiguration` / `SimpleMetricsExportAutoConfiguration` 稍后提供,条件求值时容器里还没有该 Bean 定义,于是指标静默缺失。单元测试因为显式传入 `SimpleMeterRegistry` 才通过,掩盖了缺陷。现在改为 `ObjectProvider<MeterRegistry>` 延迟取值,并加 `@AutoConfigureAfter(MetricsAutoConfiguration)` 保证求值顺序。
+- `PoWMetrics` 在 `registry` 为 null 时不再 NPE,退化为空实现(启动不因观测缺失而失败)。
+
+### 测试
+
+- 新增 2 例:无自适应时 EWMA `-1`;自适应开启后 EWMA 指标反映实际观测值。
+
 ## [0.1.3] - 2026-11-08
 
 ### 新增

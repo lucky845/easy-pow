@@ -2,6 +2,7 @@ package io.github.lucky845.basic.pow;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -19,6 +20,9 @@ import org.springframework.context.annotation.Configuration;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(PowProperties.class)
+// 必须在 MetricsAutoConfiguration 之后:它注册 MeterRegistry,MetricsConfiguration 的
+// @ConditionalOnBean(MeterRegistry) 若先求值就找不到 Bean,指标会静默缺失(单元测试传 registry 时看不出来)。
+@AutoConfigureAfter(name = "org.springframework.boot.actuate.autoconfigure.metrics.MetricsAutoConfiguration")
 public class PowAutoConfiguration {
 
     /** 默认使用内存存储;接入 Redis 时提供自己的 {@link PowStorage} 实现即可覆盖。 */
@@ -74,12 +78,11 @@ public class PowAutoConfiguration {
     static class MetricsConfiguration {
 
         @Bean
-        @ConditionalOnBean(io.micrometer.core.instrument.MeterRegistry.class)
-        PoWMetrics poWMetrics(io.micrometer.core.instrument.MeterRegistry registry,
+        PoWMetrics poWMetrics(ObjectProvider<io.micrometer.core.instrument.MeterRegistry> registry,
                               PowProperties properties,
                               ObjectProvider<AdaptiveDifficulty> adaptive) {
             AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
-            return new PoWMetrics(registry, properties.toConfig(), adjuster);
+            return new PoWMetrics(registry.getIfAvailable(), properties.toConfig(), adjuster);
         }
     }
 
