@@ -49,6 +49,12 @@ public class PowProperties {
     /** fail-mode=OPEN 时使用的降级存储 Bean 名称;缺省且无唯一候选时退化为内存存储。 */
     private String fallbackStorage;
 
+    /**
+     * Redis 存储的 key 前缀;仅在使用自动装配的 {@link RedisPowStorage} 时生效。
+     * 消费标记前缀由它派生,无需单独配置。
+     */
+    private String redisKeyPrefix = RedisPowStorage.DEFAULT_PREFIX;
+
     /** 转为核心 {@link PowConfig};secret 缺失或空白时快速失败,阻止应用启动。 */
     public PowConfig toConfig() {
         if (secret == null || secret.isBlank()) {
@@ -95,6 +101,14 @@ public class PowProperties {
 
     public void setMaxPendingChallenges(int maxPendingChallenges) {
         this.maxPendingChallenges = maxPendingChallenges;
+    }
+
+    public String getRedisKeyPrefix() {
+        return redisKeyPrefix;
+    }
+
+    public void setRedisKeyPrefix(String redisKeyPrefix) {
+        this.redisKeyPrefix = redisKeyPrefix;
     }
 
     public PowStorageFailMode getStorageFailMode() {

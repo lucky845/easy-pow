@@ -52,7 +52,8 @@ public class RedisPowAutoConfiguration {
     public PowStorage powStorage(StringRedisTemplate redisTemplate,
                                  PowProperties properties,
                                  ObjectProvider<PowStorage> storageProvider) {
-        RedisPowStorage redis = new RedisPowStorage(redisTemplate);
+        RedisPowStorage redis = new RedisPowStorage(redisTemplate, java.time.Clock.systemUTC(),
+                properties.getRedisKeyPrefix());
         PowStorageFailMode mode = properties.getStorageFailMode();
         PowStorage fallback = null;
         if (mode == PowStorageFailMode.OPEN) {
