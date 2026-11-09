@@ -5,6 +5,7 @@ import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class PowChallengeVerifierTest {
@@ -38,6 +39,44 @@ class PowChallengeVerifierTest {
     private static String flipLastChar(String hex) {
         char last = hex.charAt(hex.length() - 1);
         return hex.substring(0, hex.length() - 1) + (last == '0' ? '1' : '0');
+    }
+
+    @Test
+    void clientTookIsForwardedToListener() {
+        PowChallenge challenge = issuer.issue(2000, 120_000);
+        long number = solve(challenge);
+        java.util.List<Long> tooks = new java.util.ArrayList<>();
+        PowChallengeVerifier observed = new PowChallengeVerifier(config(), storage,
+                new PowDifficultyListener() {
+                    @Override
+                    public void onVerified(String challengeKey, Long clientSolveMs) {
+                        tooks.add(clientSolveMs);
+                    }
+                });
+
+        assertEquals(PowStatus.PASSED, observed.verify(solutionJson(challenge, number)).status());
+        assertEquals(java.util.List.of(42L), tooks, "took 必须原样传给监听器,否则难度自适应拿不到真实耗时");
+    }
+
+    @Test
+    void malformedTookIsTreatedAsMissing() {
+        PowChallenge challenge = issuer.issue(2000, 120_000);
+        long number = solve(challenge);
+        java.util.List<Long> tooks = new java.util.ArrayList<>();
+        PowChallengeVerifier observed = new PowChallengeVerifier(config(), storage,
+                new PowDifficultyListener() {
+                    @Override
+                    public void onVerified(String challengeKey, Long clientSolveMs) {
+                        tooks.add(clientSolveMs);
+                    }
+                });
+        String payload = "{\"algorithm\":\"" + challenge.algorithm() + "\",\"challenge\":\"" + challenge.challenge()
+                + "\",\"number\":" + number + ",\"salt\":\"" + challenge.salt()
+                + "\",\"signature\":\"" + challenge.signature() + "\",\"took\":\"abc\"}";
+
+        assertEquals(PowStatus.PASSED, observed.verify(payload).status(), "非法 took 不能影响校验结论");
+        assertEquals(1, tooks.size());
+        assertNull(tooks.get(0), "非法 took 应作为无观测传递,而不是抛异常");
     }
 
     @Test

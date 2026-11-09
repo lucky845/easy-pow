@@ -55,6 +55,22 @@ public class PowProperties {
      */
     private String redisKeyPrefix = RedisPowStorage.DEFAULT_PREFIX;
 
+    /**
+     * 配置自检:非法值在启动期就带着配置键名报出来。
+     *
+     * <p>不用 {@code @Validated}:那要求 classpath 上有 Bean Validation provider,
+     * 而本 starter 没有任何 validation 依赖,会让原本能跑的应用启动失败。</p>
+     */
+    public void validate() {
+        if (storageCooldownMs <= 0) {
+            throw new IllegalStateException("配置 " + PREFIX + ".storage-cooldown-ms 必须大于 0,当前 " + storageCooldownMs);
+        }
+        if (redisKeyPrefix == null || redisKeyPrefix.isBlank()) {
+            throw new IllegalStateException("配置 " + PREFIX + ".redis-key-prefix 不能为空");
+        }
+        adaptive.validate();
+    }
+
     /** 转为核心 {@link PowConfig};secret 缺失或空白时快速失败,阻止应用启动。 */
     public PowConfig toConfig() {
         if (secret == null || secret.isBlank()) {
@@ -153,6 +169,23 @@ public class PowProperties {
 
         /** 难度上限(≥ min-maxnumber)。 */
         private long maxMaxnumber = PowConfig.DEFAULT_MAXNUMBER;
+
+        /** 只有启用时才校验——关闭自适应时下面几个值根本不会参与计算。 */
+        void validate() {
+            if (!enabled) {
+                return;
+            }
+            if (targetSolveMs <= 0) {
+                throw new IllegalStateException("配置 " + PREFIX + ".adaptive.target-solve-ms 必须大于 0,当前 " + targetSolveMs);
+            }
+            if (minMaxnumber < 1_000) {
+                throw new IllegalStateException("配置 " + PREFIX + ".adaptive.min-maxnumber 不能小于 1000,当前 " + minMaxnumber);
+            }
+            if (maxMaxnumber < minMaxnumber) {
+                throw new IllegalStateException("配置 " + PREFIX + ".adaptive.max-maxnumber(" + maxMaxnumber
+                        + ")不能小于 min-maxnumber(" + minMaxnumber + ")");
+            }
+        }
 
         public boolean isEnabled() {
             return enabled;

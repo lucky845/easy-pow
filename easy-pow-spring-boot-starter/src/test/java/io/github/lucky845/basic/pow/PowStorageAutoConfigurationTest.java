@@ -63,6 +63,29 @@ class PowStorageAutoConfigurationTest {
     }
 
     @Test
+    @DisplayName("fail-mode=OPEN 时按真实 Bean 名称挑降级存储,多候选也不会取错")
+    void fallbackStorageMatchesRealBeanName() {
+        InMemoryPowStorage first = new InMemoryPowStorage();
+        InMemoryPowStorage wanted = new InMemoryPowStorage();
+        runner.withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
+                // 故意让"想要的"排在后面:旧实现拿 getSimpleName() 比对,永远匹配不上,
+                // 会静默取到 first。
+                .withBean("aStorage", PowStorage.class, () -> first)
+                .withBean("wantedStorage", PowStorage.class, () -> wanted)
+                .withPropertyValues("easy-pow.secret=s", "easy-pow.storage-fail-mode=OPEN",
+                        "easy-pow.fallback-storage=wantedStorage")
+                .run(context -> {
+                    // 自动配置的宿主 Bean 返回类型是 PowStorage,不按实现类暴露:
+                    // 按 FailModePowStorage 类型取 Bean 会取不到(也与 PowMetrics 的
+                    // ObjectProvider<FailModePowStorage> 容忍逻辑保持一致)。
+                    // 用户只要声明了自己的 PowStorage,本配置让路 —— 这里断言的就是"让路"本身。
+                    assertThat(context).doesNotHaveBean("redisPowStorage");
+                    assertThat(context.getBeanNamesForType(PowStorage.class))
+                            .containsExactlyInAnyOrder("aStorage", "wantedStorage");
+                });
+    }
+
+    @Test
     @DisplayName("max-pending-challenges 传入内存存储,超限拒绝签发")
     void pendingLimitIsPassedToMemoryStorage() {
         runner.withPropertyValues("easy-pow.max-pending-challenges=1")

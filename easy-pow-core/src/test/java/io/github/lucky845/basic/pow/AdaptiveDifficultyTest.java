@@ -56,6 +56,19 @@ class AdaptiveDifficultyTest {
     }
 
     @Test
+    @DisplayName("客户端自报耗时优先:服务端往返时延不会被当成解题耗时")
+    void clientReportedSolveMsWins() {
+        // 若用服务端时钟,签发与校验之间几乎同时发生,solveMs 远低于噪声地板而被丢弃,
+        // 难度永远停在 base —— 这正是审查发现的 high 级缺陷。
+        AdaptiveDifficulty d = new AdaptiveDifficulty(50_000, 500, 1_000, 1_000_000, 120_000);
+        d.onIssued("k1");
+        d.onVerified("k1", 1000L);
+
+        assertEquals(1000D, d.ewmaSolveMs(), 1e-9, "必须采用客户端自报的 1000ms");
+        assertEquals(25_000L, d.currentMaxnumber(), "往返时延若是 0 会被丢弃、难度仍停在 50000");
+    }
+
+    @Test
     void convergesToTargetForKnownClient() {
         // 真实闭环:签发下发的难度 → 客户端按自身算力解出耗时 → 耗时喂回控制器。
         AdaptiveDifficulty d = new AdaptiveDifficulty(50_000, 500, 1_000, 1_000_000, 120_000);

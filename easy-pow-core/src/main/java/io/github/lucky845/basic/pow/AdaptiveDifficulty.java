@@ -129,14 +129,25 @@ public final class AdaptiveDifficulty implements PowDifficultyListener {
         issuedAt.put(challengeKey, new Issued(now, currentMaxnumber()));
     }
 
-    /** 校验通过:计算"签发 → 校验"耗时并纳入 EWMA;无本节点签发记录或样本异常时忽略。 */
+    /** 校验通过(无耗时信息):只能用服务端往返时延近似。 */
     @Override
     public void onVerified(String challengeKey) {
+        onVerified(challengeKey, null);
+    }
+
+    /**
+     * 校验通过:优先用客户端自报的解题耗时,其次用"签发 → 校验"的往返时延兜底。
+     *
+     * <p>服务端时钟量的往返里混着网络、排队和浏览器调度,与客户端算力不是一回事;
+     * 只有前端回传 {@code took} 时才是真实解题耗时。</p>
+     */
+    @Override
+    public void onVerified(String challengeKey, Long clientSolveMs) {
         Issued issued = issuedAt.remove(challengeKey);
         if (issued == null) {
             return; // 非本节点签发(多实例)或无记录,不构成有效观测
         }
-        long solveMs = System.currentTimeMillis() - issued.atMs();
+        long solveMs = clientSolveMs != null ? clientSolveMs : System.currentTimeMillis() - issued.atMs();
         if (solveMs > ttlMs) {
             return; // 超过有效期才到达,视为异常样本
         }

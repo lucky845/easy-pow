@@ -8,7 +8,7 @@
   <parent>
     <groupId>io.github.lucky845</groupId>
     <artifactId>easy-pow</artifactId>
-    <version>0.1.6</version>
+    <version>0.1.7</version>
   </parent>
 
   <artifactId>easy-pow-spring-boot-starter</artifactId>
@@ -44,6 +44,16 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-redis</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!--
+      配置校验注解(@Validated / @Min)。optional:用户自带 jakarta.validation-api 或 starter-validation,
+      两种情况下注解类和 JSR-303 提供者都能解析;没有提供者时注解只是元数据,校验静默跳过,不影响启动。
+    -->
+    <dependency>
+      <groupId>jakarta.validation</groupId>
+      <artifactId>jakarta.validation-api</artifactId>
       <optional>true</optional>
     </dependency>
 

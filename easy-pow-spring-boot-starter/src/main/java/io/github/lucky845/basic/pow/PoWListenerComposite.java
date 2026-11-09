@@ -30,9 +30,15 @@ public final class PoWListenerComposite implements PowDifficultyListener {
 
     @Override
     public void onVerified(String challengeKey) {
+        onVerified(challengeKey, null);
+    }
+
+    /** 带上客户端耗时转给每个订阅者——这里必须转新签名,否则耗时信息在复合器这一层被丢掉。 */
+    @Override
+    public void onVerified(String challengeKey, Long clientSolveMs) {
         for (PowDifficultyListener d : delegates) {
             try {
-                d.onVerified(challengeKey);
+                d.onVerified(challengeKey, clientSolveMs);
             } catch (RuntimeException ignored) {
                 // 观测旁路失败不影响校验结果
             }

@@ -23,7 +23,7 @@ public final class PowChallengeVerifier {
         this(config, storage, null);
     }
 
-    /** 挂载校验事件监听:仅校验通过时回调 {@code listener.onVerified(challenge)};可为 null。 */
+    /** 挂载校验事件监听:仅校验通过时回调 {@code listener.onVerified(challenge, took)};可为 null。 */
     public PowChallengeVerifier(PowConfig config, PowStorage storage, PowDifficultyListener listener) {
         this(config, storage, listener, null);
     }
@@ -38,6 +38,19 @@ public final class PowChallengeVerifier {
         this.storage = storage;
         this.listener = listener;
         this.errorListener = errorListener;
+    }
+
+    /** altcha 的 took 是毫秒标量(可能被序列化成字符串);解析失败或非正一律当无观测。 */
+    private static Long tookAsMillis(String took) {
+        if (took == null || took.isBlank()) {
+            return null;
+        }
+        try {
+            long ms = Long.parseLong(took.trim());
+            return ms > 0 ? ms : null;
+        } catch (NumberFormatException notANumber) {
+            return null;
+        }
     }
 
     /** 通知存储故障旁路;旁路异常一律吞掉,绝不影响校验结论。 */
@@ -105,6 +118,10 @@ public final class PowChallengeVerifier {
         if (record.expiresAtMs() <= System.currentTimeMillis()) {
             return fail(PowStatus.EXPIRED, "挑战已过期", solution.challenge());
         }
+        // 用前端自报的解题耗时做难度观测。此前用"签发时刻 → 校验时刻"的服务端时钟差,
+        // 量到的其实是 HTTP 往返时延,且低于 20ms 的样本全被丢弃、难度永远停在 base。
+        // 非数字或非正的 took 视为无观测,回落 null。
+        Long clientSolveMs = tookAsMillis(solution.took());
         boolean consumed;
         try {
             consumed = storage.tryConsume(solution.challenge(), config.defaultTtlMs());
@@ -119,7 +136,7 @@ public final class PowChallengeVerifier {
         }
         if (listener != null) {
             try {
-                listener.onVerified(solution.challenge());
+                listener.onVerified(solution.challenge(), clientSolveMs);
             } catch (RuntimeException ignored) {
                 // 观测是旁路:监听器故障不得把已通过的校验翻成失败,也不得掩盖主结果
             }

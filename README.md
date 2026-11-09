@@ -10,7 +10,7 @@
 [![Java](https://img.shields.io/badge/Java-21+-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-106%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-111%20passed-brightgreen)]()
 
 </div>
 
@@ -52,7 +52,7 @@ Maven 坐标(0.1.0 起已发布到 Maven Central;快照版本请 `mvn install` �
 <dependency>
   <groupId>io.github.lucky845</groupId>
   <artifactId>easy-pow-spring-boot-starter</artifactId>
-  <version>0.1.6</version>
+  <version>0.1.7</version>
 </dependency>
 ```
 
@@ -117,7 +117,7 @@ public class LoginController {
 <dependency>
   <groupId>io.github.lucky845</groupId>
   <artifactId>easy-pow-core</artifactId>
-  <version>0.1.6</version>
+  <version>0.1.7</version>
 </dependency>
 ```
 
@@ -179,11 +179,15 @@ compose 里默认带 `EASY_POW_REDIS_KEY_PREFIX=compose:pow:challenge:`,演示�
 | `storage-fail-mode` | enum | `CLOSED` | 存储(Redis)故障时的取舍:`CLOSED` 拒绝放行(校验返回 `STORAGE_ERROR`,不误报成过期);`OPEN` 降级到兜底存储放行,代价是故障期内**多实例部署失去防重放**,仅在可用性优先时使用 |
 | `storage-cooldown-ms` | long | `30000` | 熔断冷却:故障后多久重新探活,期间 `OPEN` 模式直接走兜底存储、不再打 Redis |
 | `redis-key-prefix` | String | `easy-pow:challenge:` | Redis 存储的 key 前缀;消费标记前缀由它派生(`challenge` 段替换为 `consumed`,如 `shop:pow:challenge:` → `shop:pow:consumed:`),不需要单独配置。同一 Redis 被多个应用/多套环境共用时按业务线隔离。**改变前缀会使在途挑战全部失效**(旧 key 读不到,校验判 `EXPIRED`),建议随发布一起切换 |
-| `fallback-storage` | String | 无 | `OPEN` 模式下的兜底存储 Bean 名称;缺省取容器内第一个非 Redis/非装饰器的 `PowStorage`,都没有则退化为进程内 `InMemoryPowStorage` |
+| `fallback-storage` | String | 无 | `OPEN` 模式下的兜底存储 Bean 名称;缺省取容器内除主存储之外的第一个 `PowStorage`(按 Bean 名称惰性选取),都没有则退化为进程内 `InMemoryPowStorage`。名称写错会打一条 WARN 再走自动选择 |
 | `adaptive.enabled` | boolean | `false` | 难度自适应开关;关闭时难度恒为 `maxnumber` |
 | `adaptive.target-solve-ms` | long | `500` | 目标解题耗时(毫秒) |
 | `adaptive.min-maxnumber` | int | `1000` | 自适应难度下限(≥ 1000) |
 | `adaptive.max-maxnumber` | int | `1000000` | 自适应难度上限(≥ min-maxnumber) |
+
+> 启动期自检:上述数值/前缀类配置非法时(如 `storage-cooldown-ms ≤ 0`、空前缀、
+> `adaptive.max-maxnumber < adaptive.min-maxnumber`)启动即失败,异常信息带上配置键名,
+> 不会拖到运行期才以难查的形态暴露。
 
 ## PoW 原理
 
@@ -271,10 +275,10 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.max-pending-challenges` 只�
 
 > ⚠️ 本库按 altcha 官方公开协议字段实现,**首次接入需与真实 altcha 前端联调一次**,确认字段编码与提交流程。
 mvn -pl easy-pow-demo -am package
-java -jar easy-pow-demo/target/easy-pow-demo-0.1.6.jar
+java -jar easy-pow-demo/target/easy-pow-demo-0.1.7.jar
 
 # 切到 Redis 存储(需本机 6379 有 Redis;验证 starter 的自动装配链路)
-java -jar easy-pow-demo/target/easy-pow-demo-0.1.6.jar --spring.profiles.active=redis
+java -jar easy-pow-demo/target/easy-pow-demo-0.1.7.jar --spring.profiles.active=redis
 ```
 
 1. 浏览器打开 <http://localhost:8080/>,页面自动完成"获取挑战 → 本地解题 → 校验"全流程(altcha 组件)。
@@ -438,7 +442,7 @@ if (!bucket.tryConsume(1)) {
 ## 构建
 
 ```
-mvn -B verify                     # 跑测试(core 64 + starter 42 = 106 用例,其中 6 例是真机 Redis 冒烟)
+mvn -B verify                     # 跑测试(core 67 + starter 44 = 111 用例,其中 6 例是真机 Redis 冒烟)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```
@@ -448,7 +452,7 @@ mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执
 `tools/pow-bench.mjs`(仅需 Node 18+,无第三方依赖)测**服务端承担的两段成本**,解题成本在浏览器侧,不计入:
 
 ```
-ISSUE_RATE_DISABLED=true java -jar easy-pow-demo/target/easy-pow-demo-0.1.6.jar --spring.profiles.active=redis &
+ISSUE_RATE_DISABLED=true java -jar easy-pow-demo/target/easy-pow-demo-0.1.7.jar --spring.profiles.active=redis &
 node tools/pow-bench.mjs                                    # 默认 http://localhost:8080,32 并发,20 秒
 B=http://host:8080 CONC=64 DURATION=30000 node tools/pow-bench.mjs
 ```
