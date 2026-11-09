@@ -141,6 +141,25 @@ if (result.status() == PowStatus.PASSED) {
 
 注意:多实例部署时签发与校验必须使用同一共享存储——starter 已内置 Redis 实现,见下节;自行实现 `PowStorage` 的场景各服务器需 NTP 对时(expiresAt 依赖本机时钟)。
 
+### 方式三:一条命令(docker compose,零本机依赖)
+
+不想装 JDK / Maven / Redis 时,直接起容器:
+
+```bash
+# demo + Redis(默认 Redis 存储)
+docker compose -f easy-pow-demo/docker-compose.yml up --build
+
+# 只起 demo(内存存储)
+docker compose -f easy-pow-demo/docker-compose.yml up --build demo
+```
+
+打开 <http://localhost:8080/> 即可联调。`GET /pow/storage` 确认当前存储实现;
+compose 里默认带 `EASY_POW_REDIS_KEY_PREFIX=compose:pow:challenge:`,演示自定义前缀
+(消费标记自动派生为 `compose:pow:consumed:*`,可用 `docker compose -f easy-pow-demo/docker-compose.yml exec redis redis-cli --scan --pattern '*'` 观察)。
+
+镜像两阶段构建:`maven:3.9-eclipse-temurin-21` 内打包,`eclipse-temurin:21-jre-alpine` 运行,非 root;
+运行时镜像不含源码与 Maven。Redis 在 compose 中关闭 RDB/AOF(演示不需要持久化)。
+
 ## 配置参考
 
 `easy-pow.*`(starter 配置;纯 Java 场景对应 `PowConfig` 构造参数):
@@ -246,12 +265,6 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.max-pending-challenges` 只�
 4. 前端如何拿到 solution 并提交到你的接口由页面自行决定(altcha 默认随表单提交字段 `altcha`)。
 
 > ⚠️ 本库按 altcha 官方公开协议字段实现,**首次接入需与真实 altcha 前端联调一次**,确认字段编码与提交流程。
-
-## Demo 联调步骤
-
-`easy-pow-demo` 是可直接运行的 Spring Boot 应用,内置 altcha 前端组件(单页 `static/index.html`):
-
-```
 mvn -pl easy-pow-demo -am package
 java -jar easy-pow-demo/target/easy-pow-demo-0.1.6.jar
 
