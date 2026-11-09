@@ -60,6 +60,11 @@ public final class FailModePowStorage implements PowStorage {
         return primary;
     }
 
+    /** 降级时实际使用的存储;未配置降级时为 {@code null}。便于测试与排障确认"按名称选中了哪一个"。 */
+    public PowStorage fallback() {
+        return fallback;
+    }
+
     /** 熔断开始至今的毫秒数(未熔断为 0)。只暴露 1/0 看不出"已经降级 5 分钟没人管"。 */
     public long trippedForMs() {
         if (!isTripped()) {

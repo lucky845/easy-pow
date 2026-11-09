@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 /**
  * PoW 自动配置:默认提供内存存储、签发器、校验器三个单例 Bean,
@@ -25,10 +26,18 @@ import org.springframework.context.annotation.Configuration;
 @AutoConfigureAfter(name = "org.springframework.boot.actuate.autoconfigure.metrics.MetricsAutoConfiguration")
 public class PowAutoConfiguration {
 
+    /** 默认存储的 Bean 名称,与 {@link RedisPowAutoConfiguration} 保持一致:两条路径只留一个主名。 */
+    static final String PRIMARY_STORAGE_BEAN = RedisPowAutoConfiguration.PRIMARY_STORAGE_BEAN;
+
     /** 默认使用内存存储;接入 Redis 时提供自己的 {@link PowStorage} 实现即可覆盖。 */
-    @Bean
-    @ConditionalOnMissingBean(PowStorage.class)
+    // 不用 @ConditionalOnMissingBean:它按"能否解析出 PowStorage"判定,会把用户自定义实现、
+    // 以及 Redis 自动配置里别名引用的另一个 PowStorage 都算成"已存在",判定结果随求值顺序漂移。
+    // 这里改为按 Bean 名称精确判定:只要存在一个非本自动配置注册的 PowStorage 就退让。
+    @Bean(name = PRIMARY_STORAGE_BEAN)
+    @Primary
+    @ConditionalOnMissingDefaultStorage
     public PowStorage powStorage(PowProperties properties) {
+        properties.validate();
         return new InMemoryPowStorage(properties.getMaxPendingChallenges());
     }
 
@@ -37,6 +46,7 @@ public class PowAutoConfiguration {
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "easy-pow.adaptive", name = "enabled", havingValue = "true")
     public AdaptiveDifficulty adaptiveDifficulty(PowProperties properties) {
+        properties.validate();
         PowProperties.Adaptive a = properties.getAdaptive();
         return new AdaptiveDifficulty(properties.getMaxNumber(), a.getTargetSolveMs(),
                 a.getMinMaxNumber(), a.getMaxMaxNumber(), properties.getTtlMs());
@@ -44,10 +54,11 @@ public class PowAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public PowChallengeIssuer powChallengeIssuer(PowProperties properties, PowStorage storage,
+    public PowChallengeIssuer powChallengeIssuer(PowProperties properties, ObjectProvider<PowStorage> storages,
                                                  ObjectProvider<AdaptiveDifficulty> adaptive,
                                                  ObjectProvider<PowDifficultyListener> listeners,
                                                  ObjectProvider<PowStorageErrorListener> errorListeners) {
+        PowStorage storage = effectiveStorage(storages);
         PowConfig config = properties.toConfig();
         AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
         PowDifficultyListener listener = composite(adjuster, listeners);
@@ -60,10 +71,11 @@ public class PowAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public PowChallengeVerifier powChallengeVerifier(PowProperties properties, PowStorage storage,
+    public PowChallengeVerifier powChallengeVerifier(PowProperties properties, ObjectProvider<PowStorage> storages,
                                                      ObjectProvider<AdaptiveDifficulty> adaptive,
                                                      ObjectProvider<PowDifficultyListener> listeners,
                                                      ObjectProvider<PowStorageErrorListener> errorListeners) {
+        PowStorage storage = effectiveStorage(storages);
         PowConfig config = properties.toConfig();
         AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
         return new PowChallengeVerifier(config, storage, composite(adjuster, listeners),
@@ -81,16 +93,34 @@ public class PowAutoConfiguration {
     @ConditionalOnClass(name = "io.micrometer.core.instrument.MeterRegistry")
     static class MetricsConfiguration {
 
+        // 这里既不能用 ObjectProvider<PowStorage>.getIfAvailable()(多实现时抛,整个应用起不来),
+        // 也不能注入 PowStorage 形参(用户另外声明实现时没有唯一候选)。熔断相关指标本来就只对
+        // FailModePowStorage 有意义,直接按这个具体类型取:没有就跳过,有几个也不会让应用起不来。
         @Bean
         PoWMetrics poWMetrics(ObjectProvider<io.micrometer.core.instrument.MeterRegistry> registry,
                               PowProperties properties,
                               ObjectProvider<AdaptiveDifficulty> adaptive,
-                              ObjectProvider<PowStorage> storage) {
+                              ObjectProvider<FailModePowStorage> failModeStorage) {
             AdaptiveDifficulty adjuster = properties.getAdaptive().isEnabled() ? adaptive.getIfAvailable() : null;
-            PowStorage current = storage.getIfAvailable();
-            FailModePowStorage failMode = current instanceof FailModePowStorage f ? f : null;
+            FailModePowStorage failMode = failModeStorage.orderedStream().findFirst().orElse(null);
             return new PoWMetrics(registry.getIfAvailable(), properties.toConfig(), adjuster, failMode);
         }
+    }
+
+    /**
+     * 取"生效的"存储:有 {@code @Primary} 时它排在最前,否则就是唯一候选。
+     *
+     * <p>为什么不直接注入 {@code PowStorage} 形参:用户另外声明了实现(例如 fail-mode=OPEN 的
+     * 降级候选、或者从别处继承来的测试替身)时容器里就没有唯一候选,Spring 6 把"多个 primary"
+     * 也视为无 primary,硬注入会让整个应用起不来 —— 而多候选正是 {@code fallback-storage} 要支持的场景。</p>
+     *
+     * <p>顺序上"本自动配置注册的那个"排在最前:能走到这里说明默认存储已经创建
+     * (内存或 Redis 包装),没有它签发/校验无从谈起;用户声明的候选只可能在
+     * {@code fallback-storage} 里被消费。</p>
+     */
+    private static PowStorage effectiveStorage(ObjectProvider<PowStorage> storages) {
+        return storages.orderedStream().findFirst()
+                .orElseThrow(() -> new IllegalStateException("没有可用的 PowStorage Bean"));
     }
 
     /**

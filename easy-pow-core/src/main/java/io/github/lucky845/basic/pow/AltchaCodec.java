@@ -88,7 +88,10 @@ public final class AltchaCodec {
         } catch (NumberFormatException e) {
             try {
                 double d = Double.parseDouble(text.trim());
-                return d == Math.rint(d) && !Double.isInfinite(d) ? (long) d : null;
+                // 超过 2^53 的 double 已无法精确表达整数,(long) 强转会静默溢出成 MIN/MAX,
+                // 与其交给后续摘要比对,不如在这里就当非法值拒掉。
+                boolean precise = Math.abs(d) <= 9.007199254740992E15;
+                return d == Math.rint(d) && precise ? (long) d : null;
             } catch (NumberFormatException alsoNotANumber) {
                 return null;
             }

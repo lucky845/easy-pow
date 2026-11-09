@@ -179,14 +179,23 @@ class RedisPowStorageTest {
     }
 
     @Test
-    @DisplayName("自定义前缀:缺尾冒号时自动补,消费标记不会产生双冒号")
+    @DisplayName("自定义前缀:缺尾冒号时自动补,两套 key 的层级结构保持对称")
     void prefixWithoutTrailingColonIsNormalized() {
         RedisPowStorage custom = new RedisPowStorage(redis, CLOCK, "shop:pow");
-        when(valueOps.get("shop:powabc")).thenReturn("v1;1002500;1000000");
-        when(valueOps.get("shop:pow:consumed:abc")).thenReturn(null);
+        when(valueOps.get("shop:pow:abc")).thenReturn(null);
 
-        assertNotNull(custom.find("abc"));
-        verify(valueOps).get("shop:powabc");
+        assertEquals("shop:pow:", custom.prefix(), "缺尾冒号时必须补齐,否则挑战 key 与消费标记 key 层级不一致");
+        custom.find("abc");
+        verify(valueOps).get("shop:pow:abc");
+    }
+
+    @Test
+    @DisplayName("派生前缀:challenge 段大小写不敏感,不会产出双冒号")
+    void deriveConsumedPrefixIsCaseInsensitive() {
+        assertEquals("easy-pow:consumed:", RedisPowStorage.deriveConsumedPrefix("easy-pow:challenge:"));
+        assertEquals("Shop:consumed:", RedisPowStorage.deriveConsumedPrefix("Shop:Challenge:"));
+        assertEquals("pow:POW:consumed:", RedisPowStorage.deriveConsumedPrefix("pow:POW:challenge:v2:"),
+                "只替换最后一段 challenge,保留用户原有大小写");
     }
 
     @Test

@@ -5,9 +5,15 @@
 发布到 Maven Central 的组件:`easy-pow-core`、`easy-pow-spring-boot-starter`(`easy-pow-demo` 不发布)。
 坐标与配置项说明见 [README](README.md)。
 
-## [Unreleased]
+## [0.1.7] - 2026-11-09
 
 ### 新增
+
+- **难度自适应改用客户端自报耗时**:此前用"签发时刻 → 校验时刻"的服务端时钟差做观测,
+  量到的是 HTTP 往返时延;且低于 20ms 的样本全部被丢弃,真实浏览器解题常常无法形成有效观测。
+  现在 `PowDifficultyListener` 新增 `onVerified(challengeKey, clientSolveMs)`,
+  校验器从 payload 的 `took` 字段取客户端耗时,取不到(缺失 / 非数字 / 非正)才回落到往返时延。
+  旧签名保留并默认转调,已实现的监听器无需改动。
 
 - **demo 一键启动**(`easy-pow-demo/Dockerfile` + `docker-compose.yml`):`docker compose up --build`
   即起 demo + Redis,不需要本机装 JDK / Maven / Redis。两阶段构建(maven 打包 → JRE alpine 运行,非 root),
@@ -29,10 +35,31 @@
   新增两条用例:负数 payload 被拒;以及伪造 challenge 让负数摘要成立时仍判 `BAD_SOLUTION`,
   而不是落进 `DIFFICULTY_EXCEEDED`。
 
+- **`pow.storage.errors` 重复计数**:校验路径的两个存储故障分支会先 `notify` 一次
+  (`onStorageError`)再 `fail`(`onRejected`),两处都累加同一个计数器,一次故障记两次,
+  与 `pow.verify.rejected{reason="storage_error"}` 对不上。现在只由 `onStorageError` 计数。
+
+- **存储自动配置让路时机不稳**:`@ConditionalOnMissingBean` 在解析阶段按"当前能否解析出
+  `PowStorage`"判定,而 Redis / 内存两个自动配置互相 `before` 又都注册同类型 Bean,
+  实测出现"条件通过、Bean 却根本没注册"的情况(用户声明多个存储时尤其明显)。
+  改用自写的 `ConditionalOnMissingDefaultStorage`:同时看已注册类型与 BeanDefinitionRegistry
+  里声明的工厂方法返回类型。主存储 Bean 名由 `powStorage` 改为 `redisPowStorage`,避免与用户
+  `@Bean public PowStorage powStorage()` 同名被当成"同一定义覆盖"而静默消失。
+
+- **`fail-mode: OPEN` 无降级候选时启动失败**:`resolveFallback` 的兜底分支用
+  `orderedStream()` 遍历候选,会实例化正在创建的主存储自己,抛出
+  "Requested bean is currently in creation"。改用按 Bean 名称过滤(惰性,不实例化),
+  并跳过主存储自身的名字。
+
+- **`AltchaCodec` 浮点 number 溢出**:`Double.parseDouble` 得到的值超过 2^53 后 `(long)` 强转会
+  静默饱和成 `Long.MIN/MAX`,非法输入因此变成"合法解"。现在超出精确整数范围直接判非法。
+
 ### 文档
 
 - README 监控指标节说明 `pow.verify.rejected` 的 `reason` tag 按 `PowStatus` **自动分档**:
   新增状态即多一档,升级后无需改查询。
+- README 配置参考补充:启动期配置自检(`storage-cooldown-ms`、`redis-key-prefix`、`adaptive.*`)
+  非法值会在启动时带配置键名报错,而不是运行期静默异常。
 
 ## [0.1.6] - 2026-11-08
 

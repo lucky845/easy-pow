@@ -158,9 +158,9 @@ public class PoWMetrics implements PowDifficultyListener, PowStorageErrorListene
         if (counter != null) {
             counter.increment();
         }
-        if (status == PowStatus.STORAGE_ERROR && storageErrors != null) {
-            storageErrors.increment();
-        }
+        // STORAGE_ERROR 的计数统一由 onStorageError 负责:校验路径的两个存储故障分支
+        // 都会先 notify 一次再 fail,这里再计就会让 pow.storage.errors 每故障 +2,
+        // 与 pow.verify.rejected{reason="storage_error"} 变成 2:1,面板映射失真。
     }
 
     /**

@@ -93,7 +93,7 @@ public class RedisPowStorage implements PowStorage {
         if (prefix == null || prefix.isBlank()) {
             throw new IllegalArgumentException("prefix 不能为空或空白");
         }
-        this.prefix = prefix.trim();
+        this.prefix = normalizePrefix(prefix);
         this.consumedPrefix = deriveConsumedPrefix(this.prefix);
     }
 
@@ -103,9 +103,25 @@ public class RedisPowStorage implements PowStorage {
      * <p>规则:带 {@code challenge} 段的把该段替换为 {@code consumed};否则去掉尾部冒号后加
      * {@code :consumed:}。两种结果都以冒号结尾。</p>
      */
+    /**
+     * 前缀规范化:去空白并补齐尾部冒号,保证 {@code <prefix><challenge>} 与派生出的消费前缀结构对称。
+     *
+     * <p>不补冒号时 {@code shop:pow} 会拼出 {@code shop:pow<challenge>}、却派生出
+     * {@code shop:pow:consumed:<challenge>},两套 key 的层级不一致,排查时容易误判。</p>
+     */
+    static String normalizePrefix(String prefix) {
+        if (prefix == null || prefix.isBlank()) {
+            throw new IllegalArgumentException("key 前缀不能为空");
+        }
+        String p = prefix.trim();
+        return p.endsWith(":") ? p : p + ":";
+    }
+
     static String deriveConsumedPrefix(String challengePrefix) {
         String p = challengePrefix.trim();
-        int idx = p.lastIndexOf("challenge");
+        // 大小写不敏感:用户按文档写成 Challenge / CHALLENGE 也必须命中同一段,
+        // 否则会静默走兜底分支、产出双冒号的怪异前缀。
+        int idx = p.toLowerCase(java.util.Locale.ROOT).lastIndexOf("challenge");
         if (idx >= 0) {
             return p.substring(0, idx) + "consumed:";
         }

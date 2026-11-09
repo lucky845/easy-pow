@@ -16,6 +16,19 @@ public interface PowDifficultyListener {
     }
 
     /**
+     * 挑战校验通过,并带上客户端自报的解题耗时。
+     *
+     * <p>默认实现忽略耗时、转调 {@link #onVerified(String)},老实现行为不变。
+     * 需要真实解题耗时的实现(如难度自适应)应覆盖这个方法:服务端时钟只能量到
+     * "签发 → 校验"的往返时延,不是客户端算力。</p>
+     *
+     * @param clientSolveMs 前端自报耗时(毫秒);为 null 表示未提供或不可解析
+     */
+    default void onVerified(String challengeKey, Long clientSolveMs) {
+        onVerified(challengeKey);
+    }
+
+    /**
      * 校验被拒绝(任何非 {@code PASSED} 状态都会回调,含 {@link PowStatus#STORAGE_ERROR})。
      *
      * <p>默认实现转调 {@link #onVerified},使只关心"通过"的老实现行为不变;

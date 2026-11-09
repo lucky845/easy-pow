@@ -29,13 +29,18 @@ class PoWMetricsRejectionTest {
     }
 
     @Test
-    @DisplayName("存储故障额外计入 pow.storage.errors")
-    void storageErrorCountsInfraCounter() {
+    @DisplayName("存储故障只计一次:onRejected 不再重复累计 pow.storage.errors")
+    void storageErrorCountsOnce() {
+        // 校验器对存储故障会先 notifyStorageError 再 fail(STORAGE_ERROR);
+        // 若 onRejected 也累计,单次故障会让 pow.storage.errors 跳到 2。
+        metrics.onStorageError("find", new IllegalStateException("boom"));
         metrics.onRejected("c1", PowStatus.STORAGE_ERROR);
-        assertEquals(1.0, registry.get(PoWMetrics.STORAGE_ERRORS).counter().count());
+        assertEquals(1.0, registry.get(PoWMetrics.STORAGE_ERRORS).counter().count(),
+                "一次存储故障只能让 pow.storage.errors +1,否则与 rejected{reason=storage_error} 不是 1:1");
+        assertEquals(1.0, counter(PowStatus.STORAGE_ERROR));
         metrics.onRejected("c2", PowStatus.EXPIRED);
         assertEquals(1.0, registry.get(PoWMetrics.STORAGE_ERRORS).counter().count(),
-                "只有 STORAGE_ERROR 才计入基础设施故障");
+                "非存储故障不得计入基础设施故障");
     }
 
     @Test
@@ -43,7 +48,7 @@ class PoWMetricsRejectionTest {
     void publisherStorageErrorCountsInfraCounter() {
         metrics.onStorageError("issue", new IllegalStateException("Redis 连接被拒绝"));
         assertEquals(1.0, registry.get(PoWMetrics.STORAGE_ERRORS).counter().count());
-        metrics.onRejected("c1", PowStatus.STORAGE_ERROR);
+        metrics.onStorageError("find", new IllegalStateException("Redis 连接被拒绝"));
         assertEquals(2.0, registry.get(PoWMetrics.STORAGE_ERRORS).counter().count(),
                 "签发与校验两类故障共用同一个计数器,口径一致");
     }
