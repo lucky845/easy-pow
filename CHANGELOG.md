@@ -9,6 +9,11 @@
 
 ### 新增
 
+- **demo 一键启动**(`easy-pow-demo/Dockerfile` + `docker-compose.yml`):`docker compose up --build`
+  即起 demo + Redis,不需要本机装 JDK / Maven / Redis。两阶段构建(maven 打包 → JRE alpine 运行,非 root),
+  依赖层单独缓存;compose 默认走 Redis profile、带自定义 key 前缀示例、`ISSUE_RATE_DISABLED=true`,
+  并用健康检查保证 Redis 先就绪。README「快速开始」新增方式三。
+
 - **Redis key 前缀可配置**(`easy-pow.redis-key-prefix`,默认 `easy-pow:challenge:`):此前前缀写死在
   `RedisPowStorage.DEFAULT_PREFIX`,同一个 Redis 被多个应用或 prod/staging 共用时只能靠人品避让。
   消费标记前缀由挑战前缀派生(`challenge` 段替换为 `consumed`),`DEFAULT_PREFIX` 仍派生出历史值
