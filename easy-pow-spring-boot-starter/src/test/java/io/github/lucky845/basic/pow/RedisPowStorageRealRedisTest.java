@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -111,6 +112,30 @@ class RedisPowStorageRealRedisTest {
         assertEquals(5_000L, record.maxnumber());
         assertTrue(redis.opsForValue().get(CHALLENGE_PREFIX + key()).startsWith("v1;"),
                 "存储格式应为自描述文本 v1;<expiresAtMs>;<maxnumber>");
+    }
+
+    @Test
+    @DisplayName("真机 Redis:自定义前缀同时作用于挑战 key 与消费标记 key,默认前缀不受影响")
+    void customPrefixIsolatesBothKeyKindsOnRealRedis() {
+        RedisPowStorage custom = new RedisPowStorage(redis, Clock.systemUTC(), "powtest:shop:challenge:");
+        long expiresAtMs = System.currentTimeMillis() + 60_000L;
+        custom.save("iso", expiresAtMs, 7_000L);
+
+        assertTrue(redis.getExpire("powtest:shop:challenge:iso") > 0, "挑战 key 应落在自定义前缀下");
+        assertNull(redis.opsForValue().get(RedisPowStorage.DEFAULT_PREFIX + "iso"),
+                "默认前缀下不应出现该挑战(隔离生效)");
+        assertEquals(7_000L, custom.find("iso").maxnumber());
+
+        assertTrue(custom.tryConsume("iso", 30_000L), "首次消费应成功");
+        assertNull(redis.opsForValue().get("powtest:shop:challenge:iso"), "消费后主 key 应被删除");
+        assertNotNull(redis.opsForValue().get("powtest:shop:consumed:iso"),
+                "消费标记应落在派生前缀 powtest:shop:consumed: 下");
+        assertNull(redis.opsForValue().get(RedisPowStorage.CONSUMED_PREFIX + "iso"),
+                "默认消费标记前缀下不应有残留");
+        assertEquals(7_000L, custom.find("iso").maxnumber(), "标记窗口内仍能读回记录(REUSED 语义)");
+        assertFalse(custom.tryConsume("iso", 30_000L));
+
+        redis.delete(List.of("powtest:shop:challenge:iso", "powtest:shop:consumed:iso"));
     }
 
     @Test

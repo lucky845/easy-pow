@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **Redis key 前缀可配置**(`easy-pow.redis-key-prefix`,默认 `easy-pow:challenge:`):此前前缀写死在
+  `RedisPowStorage.DEFAULT_PREFIX`,同一个 Redis 被多个应用或 prod/staging 共用时只能靠人品避让。
+  消费标记前缀由挑战前缀派生(`challenge` 段替换为 `consumed`),`DEFAULT_PREFIX` 仍派生出历史值
+  `easy-pow:consumed:`,**升级不迁移数据**。
+  `RedisPowStorage` 新增 `(redis, clock, prefix)` 构造与 `prefix()`;空白前缀快速失败,
+  避免写出所有人共享的空 key。前缀改变会使在途挑战失效(见 README 配置参考)。
+
 ### 修复
 
 - **负数 number 未判非法**:枚举范围是 `[0, maxnumber]`,但校验链只拦了上界(`number > maxnumber`

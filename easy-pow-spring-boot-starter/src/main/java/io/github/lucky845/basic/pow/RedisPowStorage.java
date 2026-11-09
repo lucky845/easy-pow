@@ -65,14 +65,57 @@ public class RedisPowStorage implements PowStorage {
 
     private final Clock clock;
 
+    private final String prefix;
+
+    private final String consumedPrefix;
+
     public RedisPowStorage(StringRedisTemplate redis) {
         this(redis, Clock.systemUTC());
     }
 
     /** 测试可注入固定 Clock,使 TTL 计算可断言。 */
     public RedisPowStorage(StringRedisTemplate redis, Clock clock) {
+        this(redis, clock, DEFAULT_PREFIX);
+    }
+
+    /**
+     * 全量构造:自定义 key 前缀。
+     *
+     * <p>同一 Redis 被多个应用/多套环境共用,或需要按业务线隔离清理时使用。
+     * 消费标记前缀由挑战前缀派生(去掉尾部冒号后加 {@code :consumed:}),
+     * 保证一次配置同时覆盖两类 key,不会出现"挑战换了前缀、消费标记还留在旧前缀"的半迁移状态。</p>
+     *
+     * @param prefix 挑战 key 前缀,非空;完整 key 为 {@code prefix + challengeKey}
+     */
+    public RedisPowStorage(StringRedisTemplate redis, Clock clock, String prefix) {
         this.redis = Objects.requireNonNull(redis, "StringRedisTemplate 不能为空");
         this.clock = Objects.requireNonNull(clock, "clock 不能为空");
+        if (prefix == null || prefix.isBlank()) {
+            throw new IllegalArgumentException("prefix 不能为空或空白");
+        }
+        this.prefix = prefix.trim();
+        this.consumedPrefix = deriveConsumedPrefix(this.prefix);
+    }
+
+    /**
+     * 从挑战前缀派生消费标记前缀,保证 DEFAULT_PREFIX 派生出历史值 {@code easy-pow:consumed:}(升级不迁移数据)。
+     *
+     * <p>规则:带 {@code challenge} 段的把该段替换为 {@code consumed};否则去掉尾部冒号后加
+     * {@code :consumed:}。两种结果都以冒号结尾。</p>
+     */
+    static String deriveConsumedPrefix(String challengePrefix) {
+        String p = challengePrefix.trim();
+        int idx = p.lastIndexOf("challenge");
+        if (idx >= 0) {
+            return p.substring(0, idx) + "consumed:";
+        }
+        String base = p.endsWith(":") ? p.substring(0, p.length() - 1) : p;
+        return base + ":consumed:";
+    }
+
+    /** 当前挑战 key 前缀。 */
+    public String prefix() {
+        return prefix;
     }
 
     @Override
@@ -112,12 +155,12 @@ public class RedisPowStorage implements PowStorage {
         return Long.valueOf(1L).equals(consumed);
     }
 
-    private static String keyOf(String challengeKey) {
-        return DEFAULT_PREFIX + challengeKey;
+    private String keyOf(String challengeKey) {
+        return prefix + challengeKey;
     }
 
-    private static String consumedKeyOf(String challengeKey) {
-        return CONSUMED_PREFIX + challengeKey;
+    private String consumedKeyOf(String challengeKey) {
+        return consumedPrefix + challengeKey;
     }
 
     static String encode(long expiresAtMs, long maxnumber) {

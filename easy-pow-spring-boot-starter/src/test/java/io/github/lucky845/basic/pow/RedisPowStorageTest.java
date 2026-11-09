@@ -166,4 +166,33 @@ class RedisPowStorageTest {
         assertTrue(RedisPowStorage.CONSUME_LUA.contains("redis.call('DEL', KEYS[1])"));
         assertEquals("easy-pow:consumed:", RedisPowStorage.CONSUMED_PREFIX);
     }
+
+    @Test
+    @DisplayName("自定义前缀:挑战 key 与消费标记 key 同步派生")
+    void customPrefixDrivesBothKeyKinds() {
+        RedisPowStorage custom = new RedisPowStorage(redis, CLOCK, "shop:pow:");
+        when(valueOps.get("shop:pow:abc")).thenReturn(null);
+        when(valueOps.get("shop:pow:consumed:abc")).thenReturn("v1;1002500;1000000");
+
+        assertNotNull(custom.find("abc"));
+        assertEquals("shop:pow:", custom.prefix());
+    }
+
+    @Test
+    @DisplayName("自定义前缀:缺尾冒号时自动补,消费标记不会产生双冒号")
+    void prefixWithoutTrailingColonIsNormalized() {
+        RedisPowStorage custom = new RedisPowStorage(redis, CLOCK, "shop:pow");
+        when(valueOps.get("shop:powabc")).thenReturn("v1;1002500;1000000");
+        when(valueOps.get("shop:pow:consumed:abc")).thenReturn(null);
+
+        assertNotNull(custom.find("abc"));
+        verify(valueOps).get("shop:powabc");
+    }
+
+    @Test
+    @DisplayName("空白前缀快速失败,避免写出所有人共享的空前缀 key")
+    void blankPrefixIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new RedisPowStorage(redis, CLOCK, "  "));
+        assertThrows(IllegalArgumentException.class, () -> new RedisPowStorage(redis, CLOCK, null));
+    }
 }
