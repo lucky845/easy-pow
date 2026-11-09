@@ -149,11 +149,16 @@ if (result.status() == PowStatus.PASSED) {
 # demo + Redis(默认 Redis 存储)
 docker compose -f easy-pow-demo/docker-compose.yml up --build
 
-# 只起 demo(内存存储)
-docker compose -f easy-pow-demo/docker-compose.yml up --build demo
+# 只要内存存储的 demo:去掉 redis 配置后 Spring 仍会装配 Redis 连接工厂,
+# 因此显式排除 Redis 自动配置(否则启动即失败:'host' must not be empty)
+docker compose -f easy-pow-demo/docker-compose.yml run --rm --service-ports \
+  -e SPRING_PROFILES_ACTIVE= \
+  -e SPRING_DATA_REDIS_HOST= \
+  -e SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration demo
 ```
 
-打开 <http://localhost:8080/> 即可联调。`GET /pow/storage` 确认当前存储实现;
+打开 <http://localhost:8080/> 即可联调,`GET /pow/storage` 确认当前存储实现
+(两条命令分别返回 `RedisPowStorage (经 FailModePowStorage 包装)` 与 `InMemoryPowStorage`,均已实测)。
 compose 里默认带 `EASY_POW_REDIS_KEY_PREFIX=compose:pow:challenge:`,演示自定义前缀
 (消费标记自动派生为 `compose:pow:consumed:*`,可用 `docker compose -f easy-pow-demo/docker-compose.yml exec redis redis-cli --scan --pattern '*'` 观察)。
 
