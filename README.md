@@ -217,7 +217,27 @@ Redis 连接走 Spring Boot 标准配置;`easy-pow.max-pending-challenges` 只�
 
 ## 与 altcha 前端对接
 
-1. 页面引入官方 altcha web component,例如 `<altcha-widget challengeurl="/pow/challenge" verifyurl="/pow/verify">`。
+1. 页面引入官方 altcha web component,例如:
+
+   ```html
+   <script async defer src="https://cdn.jsdelivr.net/npm/altcha@2/dist/altcha.min.js" type="module"></script>
+   <altcha-widget
+       challengeurl="/pow/challenge"
+       verifyurl="/pow/verify"
+       auto="onload"
+       name="altcha">
+   </altcha-widget>
+   ```
+
+   > `<script>` 必须在 `<altcha-widget>` 之前出现且带 `type="module"`——组件依赖该模块注册自定义元素,
+   > 顺序反了页面会静默不渲染。内网部署请把 `altcha.min.js` 下载到自己的静态目录(license: MIT),
+   > 见 demo 的 `static/vendor/altcha.min.js`。
+
+   **校验响应必须回显 `payload`**:altcha v2 的组件状态机只在响应体含非空 `payload` 时才置 `VERIFIED`,
+   否则会一直停在 `VERIFYING`(页面转圈)。服务端要把收到的 solution 原样放回 `payload` 字段,例如
+   `{"success":true,"payload":"<收到的 base64(JSON) solution>"}`;本库返回的 `PowResult` 不含该字段,
+   **由调用方的 Controller 拼装**——demo 的 `PowController.VerifyResponse` 即为参考实现。
+   这是接入时最常见的"校验 200 但页面不动"根因。
 2. **下发**:challengeurl 响应体为 `AltchaCodec.toJson(issue())`,形如
    `{"algorithm":"SHA-256","challenge":"...","maxnumber":1000000,"salt":"...","signature":"..."`,字段名与 altcha 官方一致。
 3. **回传**:altcha 前端解出 number 后,把 solution 以 `base64(JSON)` 提交(默认放在表单字段 `altcha` 中),形如
@@ -242,7 +262,7 @@ java -jar easy-pow-demo/target/easy-pow-demo-0.1.6.jar --spring.profiles.active=
 2. 也可用页面下方"手动联调"按钮,分步查看挑战 JSON、本地枚举解题、提交 `base64(JSON)` 校验。
 3. 接口约定:
    - `GET /pow/challenge` — 下发 altcha challenge JSON;
-   - `POST /pow/verify` — 表单字段 `payload`(或 `altcha`)携带 base64(JSON) solution,返回 `{"success":bool,"status":...,"message":...}`;
+   - `POST /pow/verify` — 表单字段 `payload`(或 `altcha`)携带 base64(JSON) solution;也接受 altcha v2 组件的 `POST` + JSON body `{"payload":"<base64(JSON)>"}`。返回 `{"success":bool,"status":...,"message":...,"payload":"<回显>"}`——`payload` 必须回显,否则组件停在 Verifying(见上节);
    - `GET /pow/storage` — 当前存储实现与故障策略,形如 `{"storage":"RedisPowStorage (经 FailModePowStorage 包装)","failMode":"CLOSED"}`,页面上也会显示。
 4. `--spring.profiles.active=redis` 启动后,`/pow/storage` 应显示 `RedisPowStorage`;此时挑战写在 `easy-pow:challenge:*`,
    校验通过后主 key 被删除、只留 `easy-pow:consumed:*` 防重放标记(消费窗口内重放返回 `REUSED`)。
