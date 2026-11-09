@@ -1,0 +1,37 @@
+# 一条命令起完整联调环境(含 Redis):docker compose up --build
+# 页面: http://localhost:8080/ ; /pow/storage 显示当前存储实现
+#
+# 只想起 demo(内存存储、不需要 Redis):docker compose up --build demo
+
+services:
+  demo:
+    build:
+      # 构建上下文是仓库根:demo 依赖 core/starter,只拷 demo 目录会在容器里缺模块
+      context: ..
+      dockerfile: easy-pow-demo/Dockerfile
+    image: easy-pow-demo:local
+    ports:
+      - "8080:8080"
+    environment:
+      # 演示/压测放开签发限流:否则脚本连发会被 30 次/分钟的演示限流打成 429
+      ISSUE_RATE_DISABLED: "true"
+      # 默认走 Redis 存储:容器内 Redis 是服务名 redis,不是 localhost
+      SPRING_PROFILES_ACTIVE: redis
+      SPRING_DATA_REDIS_HOST: redis
+      # 自定义 key 前缀演示:消费标记会自动派生为 compose:pow:consumed:*
+      EASY_POW_REDIS_KEY_PREFIX: "compose:pow:challenge:"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    # 演示环境不需要持久化:关掉 RDB/AOF,容器重启即清空,避免旧挑战干扰联调
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
