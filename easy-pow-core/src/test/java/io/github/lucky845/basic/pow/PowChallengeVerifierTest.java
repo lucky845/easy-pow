@@ -164,6 +164,32 @@ class PowChallengeVerifierTest {
     }
 
     @Test
+    void negativeNumberIsRejectedEvenWhenBeyondBound() {
+        // 负数绕不过摘要校验:salt 与 -1 拼接后摘要必然不匹配,在更早一步就被拒。
+        // 用一个"合法 number 的摘要、但 number 字段填负数"的 payload 走不到上界判断,只为锁死
+        // 「负数绝不被当作合法解」这条不变量(上下界都必须是服务端说了算)。
+        PowChallenge challenge = issuer.issue(2000, 120_000);
+        long number = solve(challenge);
+        assumeTrue(number > 0, "解恰好为 0 时无法构造负数字段");
+        assertEquals(PowStatus.BAD_SOLUTION, verifier.verify(solutionJson(challenge, -number)).status());
+    }
+
+    @Test
+    void negativeNumberIsBadSolutionNotDifficultyExceeded() {
+        // 伪造一个 challenge 使 SHA(salt + "-5") == challenge,再让签名合法:
+        // 摘要这一步能过,但枚举范围 [0, maxnumber] 不包含负数,必须明确判 BAD_SOLUTION,
+        // 而不是落进 DIFFICULTY_EXCEEDED(上界那支只拦"过大")。
+        String salt = "neg-salt";
+        long negative = -5L;
+        String challengeHex = Hashes.shaHex("SHA-256", salt + negative);
+        String signature = Hashes.hmacHex("SHA-256", SECRET, challengeHex);
+        storage.save(challengeHex, System.currentTimeMillis() + 120_000, 1000);
+        String payload = "{\"algorithm\":\"SHA-256\",\"challenge\":\"" + challengeHex + "\",\"number\":" + negative
+                + ",\"salt\":\"" + salt + "\",\"signature\":\"" + signature + "\"}";
+        assertEquals(PowStatus.BAD_SOLUTION, verifier.verify(payload).status());
+    }
+
+    @Test
     void algorithmMismatchIsBadSolution() {
         // 算法名不参与签名:用 SHA-512 签发却声明 SHA-256,必须被配置层拒绝(防降级)
         PowStorage shared = new InMemoryPowStorage();
