@@ -10,7 +10,7 @@
 [![Java](https://img.shields.io/badge/Java-21+-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-62%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-102%20passed-brightgreen)]()
 
 </div>
 
@@ -312,7 +312,7 @@ starter 检测到 `MeterRegistry`(即引入 `micrometer-core` 或任一带 Micro
 | `pow.challenge.issued` | Counter | 已签发挑战数 |
 | `pow.challenge.verified` | Counter | 校验通过数 |
 | `pow.maxnumber` | Gauge | 当前难度上限(自适应开启时随 EWMA 变化) |
-| `pow.verify.rejected` | Counter(tag `reason`) | **被拒绝**的校验数,按 `PowStatus` 小写名分档(`reused` / `bad_signature` / `expired` / `storage_error` / `difficulty_exceeded` 等)。被攻击时看这个,不是看通过数 |
+| `pow.verify.rejected` | Counter(tag `reason`) | **被拒绝**的校验数,按 `PowStatus` 小写名分档(`reused` / `bad_signature` / `expired` / `storage_error` / `difficulty_exceeded` 等)。被攻击时看这个,不是看通过数。**每加一个 `PowStatus` 取值都会自动多一档**(指标在枚举上预注册),升级后新 tag 可沿同一查询出现 |
 | `pow.storage.errors` | Counter | 存储层故障数,**签发与校验两类都计**(签发失败没有 `PowStatus`,由 `PowStorageErrorListener` 补报)。与 `rejected{reason="expired"}` 分开:前者是基础设施,后者是业务 |
 | `pow.storage.tripped` | Gauge | 存储熔断状态(0/1)。`storage-fail-mode: OPEN` 时持续为 1 表示正在降级放行,此时多实例无防重放 |
 | `pow.storage.tripped.for.ms` | Gauge | 熔断已持续多久(毫秒,0 = 未熔断)。0/1 只看得出"在故障",这个看得出"故障多久没人管"——告警用它定阈值 |
@@ -399,7 +399,7 @@ if (!bucket.tryConsume(1)) {
 ## 构建
 
 ```
-mvn -B verify                     # 跑测试(core 62 + starter 38 = 100 用例,其中 5 例是真机 Redis 冒烟)
+mvn -B verify                     # 跑测试(core 64 + starter 38 = 102 用例,其中 5 例是真机 Redis 冒烟)
 mvn package                       # 打包全部模块
 mvn -pl easy-pow-demo -am package # 打包 demo(含 spring-boot repackage 可执行 jar)
 ```

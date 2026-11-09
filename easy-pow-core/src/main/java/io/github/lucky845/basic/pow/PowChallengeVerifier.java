@@ -97,6 +97,11 @@ public final class PowChallengeVerifier {
             return fail(PowStatus.DIFFICULTY_EXCEEDED,
                     "number " + solution.number() + " 超过难度上限 " + record.maxnumber(), solution.challenge());
         }
+        // 枚举范围是 [0, maxnumber]:负数只能来自伪造 payload(摘要校验无法覆盖到这个边界)。
+        if (solution.number() < 0) {
+            return fail(PowStatus.BAD_SOLUTION,
+                    "number 为负数 " + solution.number(), solution.challenge());
+        }
         if (record.expiresAtMs() <= System.currentTimeMillis()) {
             return fail(PowStatus.EXPIRED, "挑战已过期", solution.challenge());
         }

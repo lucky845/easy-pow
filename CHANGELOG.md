@@ -5,6 +5,21 @@
 发布到 Maven Central 的组件:`easy-pow-core`、`easy-pow-spring-boot-starter`(`easy-pow-demo` 不发布)。
 坐标与配置项说明见 [README](README.md)。
 
+## [Unreleased]
+
+### 修复
+
+- **负数 number 未判非法**:枚举范围是 `[0, maxnumber]`,但校验链只拦了上界(`number > maxnumber`
+  → `DIFFICULTY_EXCEEDED`),负数没有任何一支拦。虽然 `SHA256(salt + (-5))` 几乎不可能等于 challenge,
+  但这意味着"合法解"的定义里缺少下界——现在明确判 `BAD_SOLUTION`。
+  新增两条用例:负数 payload 被拒;以及伪造 challenge 让负数摘要成立时仍判 `BAD_SOLUTION`,
+  而不是落进 `DIFFICULTY_EXCEEDED`。
+
+### 文档
+
+- README 监控指标节说明 `pow.verify.rejected` 的 `reason` tag 按 `PowStatus` **自动分档**:
+  新增状态即多一档,升级后无需改查询。
+
 ## [0.1.6] - 2026-11-08
 
 ### 新增
