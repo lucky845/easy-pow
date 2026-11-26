@@ -11,10 +11,17 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-111%20passed-brightgreen)]()
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](LICENSE)
 
 </div>
 
 PoW(Proof of Work)无感验证码 Java 服务端库,协议兼容 [altcha](https://altcha.org) 前端。核心零第三方依赖,30 分钟可集成:真实用户全程无感,脚本批量请求的成本被显著抬高。
+
+> [!NOTE]
+> **零依赖核心 + 协议兼容。** 核心只依赖 JDK 21+ 标准库；challenge/solution 字段名与 altcha 官方一致，可直接对接其前端组件。
+
+> [!IMPORTANT]
+> PoW 只抬高批量请求成本，**不是绝对安全**。请按业务风险选难度档位，并配合限流 / 二次校验；安全默认已启用常量时间比较与签名降级拒绝。
 
 ## 特性
 
